@@ -1,0 +1,9 @@
+{
+  "appId": "io.t6x.onnx.test",
+  "appName": "ONNX Test",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  },
+  "loggingBehavior": "debug"
+}

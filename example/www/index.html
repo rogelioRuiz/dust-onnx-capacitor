@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>capacitor-onnx O1+O2 E2E</title>
+  <style>
+    body { font-family: monospace; background: #111827; color: #e5e7eb; margin: 0; padding: 16px; }
+    h1 { margin: 0 0 4px; color: #f59e0b; font-size: 20px; }
+    #status, #summary { margin-top: 12px; padding: 10px; border-radius: 6px; background: #1f2937; }
+    .test { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #1f2937; }
+    .pass { border-left: 4px solid #22c55e; }
+    .fail { border-left: 4px solid #ef4444; }
+    .detail { color: #9ca3af; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>capacitor-onnx</h1>
+  <div>Stage O1+O2 lifecycle and inference tests</div>
+  <div id="status">Waiting for Capacitor bridge...</div>
+  <div id="tests"></div>
+  <div id="summary"></div>
+
+  <script src="capacitor.js"></script>
+  <script>
+  (async function () {
+    var RUNNER_URL = 'http://127.0.0.1:8099'
+
+    function setStatus(msg) { document.getElementById('status').textContent = msg }
+
+    function render(name, status, detail) {
+      var id = 'test-' + name
+      var node = document.getElementById(id)
+      if (!node) {
+        node = document.createElement('div')
+        node.id = id
+        node.className = 'test'
+        document.getElementById('tests').appendChild(node)
+      }
+      node.className = 'test ' + status
+      node.innerHTML = '<div>' + name + '</div><div class="detail">' + (detail || '') + '</div>'
+    }
+
+    async function post(path, payload) {
+      try {
+        await fetch(RUNNER_URL + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          keepalive: true,
+        })
+      } catch (_) {}
+    }
+
+    async function report(id, status, detail, error) {
+      render(id, status === 'pass' ? 'pass' : 'fail', detail || error || '')
+      await post('/__onnx_result', { id, status, detail, error })
+    }
+
+    async function done(passed, failed, total) {
+      document.getElementById('summary').textContent = passed + '/' + total + ' passed'
+      await post('/__onnx_done', { passed, failed, total })
+    }
+
+    function assert(v, msg) { if (!v) throw new Error(msg) }
+
+    async function expectReject(fn, code) {
+      try { await fn() } catch (e) {
+        if (e && e.code === code) return
+        throw new Error('Expected ' + code + ', got ' + JSON.stringify(e))
+      }
+      throw new Error('Expected rejection with code ' + code)
+    }
+
+    function sameArray(a, b) {
+      return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every(function (value, index) {
+        return value === b[index]
+      })
+    }
+
+    // Wait for Capacitor bridge
+    var ONNX = null
+    for (var i = 0; i < 50; i++) {
+      ONNX = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX
+      if (ONNX) break
+      await new Promise(function (r) { setTimeout(r, 200) })
+    }
+    if (!ONNX) { setStatus('ONNX plugin not found'); return }
+
+    // Platform-aware model paths
+    // iOS: test runner copies files to app Documents dir, writes test-config.json with basePath
+    // Android: test runner pushes files to /data/local/tmp/ via adb push
+    var platform = window.Capacitor.getPlatform()
+    var base = '/data/local/tmp'
+    if (platform === 'ios') {
+      try {
+        var resp = await fetch('test-config.json')
+        var cfg = await resp.json()
+        base = cfg.basePath
+      } catch (_) {
+        base = '/tmp'
+      }
+    }
+    var VALID_PATH = base + '/tiny-test.onnx'
+    var CORRUPT_PATH = base + '/corrupt-test.onnx'
+    var MISSING_PATH = base + '/does-not-exist.onnx'
+
+    setStatus('Running tests (' + platform + ')...')
+
+    var passed = 0, failed = 0, total = 0
+
+    async function test(id, fn) {
+      total++
+      try { await fn(); passed++; await report(id, 'pass', 'ok') }
+      catch (e) { failed++; await report(id, 'fail', null, e.message || String(e)) }
+    }
+
+    await test('load-valid', async function () {
+      var r = await ONNX.loadModel({ descriptor: { id: 'tiny-test', format: 'onnx', url: VALID_PATH } })
+      assert(r.modelId === 'tiny-test', 'Unexpected modelId: ' + r.modelId)
+      assert(Array.isArray(r.metadata.inputs), 'Missing inputs metadata')
+      assert(Array.isArray(r.metadata.outputs), 'Missing outputs metadata')
+    })
+
+    await test('load-missing', async function () {
+      await expectReject(function () {
+        return ONNX.loadModel({ descriptor: { id: 'missing', format: 'onnx', url: MISSING_PATH } })
+      }, 'inferenceFailed')
+    })
+
+    await test('load-corrupt', async function () {
+      await expectReject(function () {
+        return ONNX.loadModel({ descriptor: { id: 'corrupt', format: 'onnx', url: CORRUPT_PATH } })
+      }, 'inferenceFailed')
+    })
+
+    await test('wrong-format', async function () {
+      await expectReject(function () {
+        return ONNX.loadModel({ descriptor: { id: 'wrong-fmt', format: 'gguf', url: VALID_PATH } })
+      }, 'formatUnsupported')
+    })
+
+    await test('unload-clears-cache', async function () {
+      await ONNX.unloadModel({ modelId: 'tiny-test' })
+      var listed = await ONNX.listLoadedModels()
+      assert(Array.isArray(listed.modelIds), 'modelIds must be array')
+      assert(listed.modelIds.length === 0, 'Expected 0 models, got ' + listed.modelIds.length)
+    })
+
+    await test('unload-unknown', async function () {
+      await expectReject(function () {
+        return ONNX.unloadModel({ modelId: 'missing-model' })
+      }, 'modelNotFound')
+    })
+
+    await test('load-same-model-twice', async function () {
+      await ONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
+      await ONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
+      var listed = await ONNX.listLoadedModels()
+      assert(listed.modelIds.length === 1, 'Expected 1 model, got ' + listed.modelIds.length)
+      await ONNX.unloadModel({ modelId: 'same-model' })
+    })
+
+    await test('load-two-models', async function () {
+      await ONNX.loadModel({ descriptor: { id: 'model-a', format: 'onnx', url: VALID_PATH } })
+      await ONNX.loadModel({ descriptor: { id: 'model-b', format: 'onnx', url: VALID_PATH } })
+      var listed = await ONNX.listLoadedModels()
+      assert(listed.modelIds.includes('model-a'), 'model-a missing')
+      assert(listed.modelIds.includes('model-b'), 'model-b missing')
+    })
+
+    await test('run-float32', async function () {
+      await ONNX.loadModel({ descriptor: { id: 'infer-model', format: 'onnx', url: VALID_PATH } })
+      var result = await ONNX.runInference({
+        modelId: 'infer-model',
+        inputs: [
+          { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
+          { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+        ],
+      })
+      assert(Array.isArray(result.outputs), 'outputs must be array')
+      assert(result.outputs.length === 1, 'Expected 1 output, got ' + result.outputs.length)
+      assert(result.outputs[0].dtype === 'float32', 'Unexpected output dtype: ' + result.outputs[0].dtype)
+      assert(sameArray(result.outputs[0].shape, [1, 3]), 'Unexpected output shape: ' + JSON.stringify(result.outputs[0].shape))
+      assert(sameArray(result.outputs[0].data, [5, 7, 9]), 'Unexpected output data: ' + JSON.stringify(result.outputs[0].data))
+    })
+
+    await test('shape-mismatch-rank', async function () {
+      await expectReject(function () {
+        return ONNX.runInference({
+          modelId: 'infer-model',
+          inputs: [
+            { name: 'input_a', dtype: 'float32', shape: [3], data: [1, 2, 3] },
+            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+          ],
+        })
+      }, 'shapeError')
+    })
+
+    await test('shape-mismatch-dim', async function () {
+      await expectReject(function () {
+        return ONNX.runInference({
+          modelId: 'infer-model',
+          inputs: [
+            { name: 'input_a', dtype: 'float32', shape: [1, 5], data: [1, 2, 3, 4, 5] },
+            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+          ],
+        })
+      }, 'shapeError')
+    })
+
+    await test('dtype-mismatch', async function () {
+      await expectReject(function () {
+        return ONNX.runInference({
+          modelId: 'infer-model',
+          inputs: [
+            { name: 'input_a', dtype: 'int32', shape: [1, 3], data: [1, 2, 3] },
+            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+          ],
+        })
+      }, 'dtypeError')
+    })
+
+    await test('output-filter', async function () {
+      var result = await ONNX.runInference({
+        modelId: 'infer-model',
+        inputs: [
+          { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
+          { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+        ],
+        outputNames: ['output'],
+      })
+      assert(result.outputs.length === 1, 'Expected 1 filtered output, got ' + result.outputs.length)
+      assert(result.outputs[0].name === 'output', 'Unexpected output name: ' + result.outputs[0].name)
+    })
+
+    await test('inference-unloaded', async function () {
+      await ONNX.unloadModel({ modelId: 'infer-model' })
+      await expectReject(function () {
+        return ONNX.runInference({
+          modelId: 'infer-model',
+          inputs: [
+            { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
+            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+          ],
+        })
+      }, 'modelNotFound')
+    })
+
+    await done(passed, failed, total)
+    setStatus('Completed')
+  })()
+  </script>
+</body>
+</html>
