@@ -18,18 +18,22 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+const ROOT_DIR = path.resolve(__dirname, '..')
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BUNDLE_ID      = 'io.t6x.onnx.test'
 const RUNNER_PORT    = 8098
 const TIMEOUT_MS     = 180_000
 const MODEL_NAME     = 'yolo26s.onnx'
+const MODEL_URL      = 'https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx'
 const IMAGE_NAME     = 'test_yolo.jpg'
 const MIN_DETECTIONS = 1
 const ADB            = process.env.ADB_PATH || 'adb'
 const DEVICE_SERIAL  = process.env.ANDROID_SERIAL || ''
 
-// Local paths — model is in the working directory (same as iOS), image is in example/
-const MODEL_PATH_LOCAL = path.join(process.cwd(), MODEL_NAME)
+// Local paths — model is cached in test/models/, image is in example/
+const MODEL_DIR        = path.join(ROOT_DIR, 'test', 'models')
+const MODEL_PATH_LOCAL = path.join(MODEL_DIR, MODEL_NAME)
 const IMAGE_PATH_LOCAL = path.join(__dirname, IMAGE_NAME)
 
 // Device paths
@@ -38,6 +42,16 @@ const SCREENSHOT_DEVICE = '/sdcard/yolo-e2e-result.png'
 const SCREENSHOT_LOCAL  = path.join(__dirname, 'yolo-e2e-android.png')
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function ensureModel() {
+  if (fs.existsSync(MODEL_PATH_LOCAL)) return
+  console.log(`  → Downloading model (${MODEL_NAME}, ~37 MB)...`)
+  fs.mkdirSync(MODEL_DIR, { recursive: true })
+  execSync(`curl -L --progress-bar -o "${MODEL_PATH_LOCAL}" "${MODEL_URL}"`, {
+    stdio: ['ignore', process.stderr, 'pipe'],
+    timeout: 300_000,
+  })
+}
+
 function adb(args, opts = {}) {
   const serial = DEVICE_SERIAL ? `-s ${DEVICE_SERIAL}` : ''
   return execSync(`${ADB} ${serial} ${args}`, { encoding: 'utf8', timeout: 60000, ...opts }).trim()
@@ -108,10 +122,12 @@ if (!DEVICE_SERIAL) process.env.ANDROID_SERIAL = device
 console.log(`  Device:    ${device}`)
 console.log(`  Bundle:    ${BUNDLE_ID}`)
 
+// Download model if needed
+ensureModel()
+
 // Verify local assets
 if (!fs.existsSync(MODEL_PATH_LOCAL)) {
-  console.error(`\n  ✗ Model not found: ${MODEL_PATH_LOCAL}`)
-  console.error('    Run this script from the directory containing yolo26s.onnx')
+  console.error(`\n  ✗ Model not found after download: ${MODEL_PATH_LOCAL}`)
   process.exit(1)
 }
 if (!fs.existsSync(IMAGE_PATH_LOCAL)) {

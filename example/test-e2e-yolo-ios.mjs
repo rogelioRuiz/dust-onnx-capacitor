@@ -3,10 +3,11 @@
  * YOLO Object Detection E2E Test — iOS Simulator
  *
  * Protocol:
- *   1. This script starts an HTTP server on :8098
- *   2. The app's bootYoloE2E() polls GET /__yolo_task to receive {modelPath, imagePath}
- *   3. App runs loadModel → preprocessImage → runInference, then POSTs results to /__yolo_result
- *   4. Script prints a report and exits 0 (pass) / 1 (fail)
+ *   1. This script downloads the model (if needed), copies assets to the simulator
+ *   2. Starts an HTTP server on :8098
+ *   3. The app's bootYoloE2E() polls GET /__yolo_task to receive {modelPath, imagePath}
+ *   4. App runs loadModel → preprocessImage → runInference, then POSTs results to /__yolo_result
+ *   5. Script takes a screenshot, prints a report, and exits 0 (pass) / 1 (fail)
  */
 
 import { execSync } from 'child_process'
@@ -16,23 +17,36 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const ROOT_DIR  = path.resolve(__dirname, '..')
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BUNDLE_ID      = 'io.t6x.onnx.test'
 const RUNNER_PORT    = 8098
 const TIMEOUT_MS     = 120_000
 const MODEL_NAME     = 'yolo26s.onnx'
+const MODEL_URL      = 'https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx'
 const IMAGE_NAME     = 'test_yolo.jpg'
 const MIN_DETECTIONS = 1
 const DEVICE_ID      = process.env.IOS_DEVICE_ID || 'booted'
+
+const MODEL_DIR        = path.join(ROOT_DIR, 'test', 'models')
+const MODEL_PATH_LOCAL = path.join(MODEL_DIR, MODEL_NAME)
+const IMAGE_PATH_LOCAL = path.join(__dirname, IMAGE_NAME)
+const SCREENSHOT_LOCAL = path.join(__dirname, 'yolo-e2e-ios.png')
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function sim(cmd) {
   return execSync(`xcrun simctl ${cmd}`, { encoding: 'utf8' }).trim()
 }
 
-function resolveDataContainer() {
-  return sim(`get_app_container ${DEVICE_ID} ${BUNDLE_ID} data`)
+function ensureModel() {
+  if (fs.existsSync(MODEL_PATH_LOCAL)) return
+  console.log(`  → Downloading model (${MODEL_NAME}, ~37 MB)...`)
+  fs.mkdirSync(MODEL_DIR, { recursive: true })
+  execSync(`curl -L --progress-bar -o "${MODEL_PATH_LOCAL}" "${MODEL_URL}"`, {
+    stdio: ['ignore', process.stderr, 'pipe'],
+    timeout: 300_000,
+  })
 }
 
 // ─── HTTP server ──────────────────────────────────────────────────────────────
@@ -69,6 +83,7 @@ function startServer(task) {
     server.listen(RUNNER_PORT, '127.0.0.1', () => {
       console.log(`  Server:    http://127.0.0.1:${RUNNER_PORT}`)
     })
+    server.on('error', reject)
   })
 }
 
@@ -77,25 +92,40 @@ console.log('\n╔════════════════════�
 console.log('║        YOLO Object Detection — iOS Simulator E2E            ║')
 console.log('╚══════════════════════════════════════════════════════════════╝\n')
 
-const dataContainer = resolveDataContainer()
-const docsDir       = path.join(dataContainer, 'Documents')
-const modelPath     = path.join(docsDir, MODEL_NAME)
-const imagePath     = path.join(docsDir, IMAGE_NAME)
+// Download model if needed
+ensureModel()
+
+if (!fs.existsSync(MODEL_PATH_LOCAL)) {
+  console.error(`\n  ✗ Model not found after download: ${MODEL_PATH_LOCAL}`)
+  process.exit(1)
+}
+if (!fs.existsSync(IMAGE_PATH_LOCAL)) {
+  console.error(`\n  ✗ Test image not found: ${IMAGE_PATH_LOCAL}`)
+  process.exit(1)
+}
 
 console.log(`  Device:    ${DEVICE_ID}`)
 console.log(`  Bundle:    ${BUNDLE_ID}`)
-console.log(`  Docs:      ${docsDir}`)
+console.log(`  Model:     ✓ ${MODEL_NAME} (${(fs.statSync(MODEL_PATH_LOCAL).size / 1e6).toFixed(1)} MB)`)
+console.log(`  Image:     ✓ ${IMAGE_NAME} (${(fs.statSync(IMAGE_PATH_LOCAL).size / 1e3).toFixed(0)} KB)`)
+
+// Copy assets to the simulator's app data container
+const dataContainer = sim(`get_app_container ${DEVICE_ID} ${BUNDLE_ID} data`)
+const docsDir       = path.join(dataContainer, 'Documents')
+fs.mkdirSync(docsDir, { recursive: true })
+
+const modelPath = path.join(docsDir, MODEL_NAME)
+const imagePath = path.join(docsDir, IMAGE_NAME)
 
 if (!fs.existsSync(modelPath)) {
-  console.error(`\n  ✗ Model not found: ${modelPath}`)
-  process.exit(1)
+  console.log('  → Copying model to simulator...')
+  fs.copyFileSync(MODEL_PATH_LOCAL, modelPath)
 }
 if (!fs.existsSync(imagePath)) {
-  console.error(`\n  ✗ Test image not found: ${imagePath}`)
-  process.exit(1)
+  console.log('  → Copying image to simulator...')
+  fs.copyFileSync(IMAGE_PATH_LOCAL, imagePath)
 }
-console.log(`  Model:     ✓ ${MODEL_NAME} (${(fs.statSync(modelPath).size / 1e6).toFixed(1)} MB)`)
-console.log(`  Image:     ✓ ${IMAGE_NAME} (${(fs.statSync(imagePath).size / 1e3).toFixed(0)} KB)\n`)
+console.log(`  Docs:      ${docsDir}\n`)
 
 const task = { modelPath, imagePath }
 
@@ -108,6 +138,7 @@ const timer = setTimeout(() => {
 }, TIMEOUT_MS)
 
 // Launch / foreground the app so bootYoloE2E() starts polling
+try { sim(`terminate ${DEVICE_ID} ${BUNDLE_ID}`) } catch (_) {}
 try { sim(`launch ${DEVICE_ID} ${BUNDLE_ID}`) } catch (_) {}
 
 console.log('  ⏳ Waiting for app to pick up task and run detection...\n')
@@ -121,6 +152,12 @@ try {
   process.exit(1)
 }
 clearTimeout(timer)
+
+// ─── Screenshot ──────────────────────────────────────────────────────────────
+try {
+  sim(`io ${DEVICE_ID} screenshot "${SCREENSHOT_LOCAL}"`)
+  console.log(`  Screenshot: ${SCREENSHOT_LOCAL}\n`)
+} catch (_) {}
 
 // ─── Report ───────────────────────────────────────────────────────────────────
 if (result.error) {
