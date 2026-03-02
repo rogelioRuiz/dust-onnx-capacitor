@@ -579,6 +579,189 @@ The runner runs `cap sync`, builds with xcodebuild, installs on the booted simul
 | Android E2E | 14 (8 O1 + 6 O2) | PASS |
 | iOS E2E | 19 (5 setup + 14 plugin) | PASS |
 
+### Running manually (step by step)
+
+If you want full control instead of the one-command E2E scripts, follow these steps.
+
+#### 1. Clone and install
+
+```bash
+git clone https://github.com/rogelioRuiz/dust-onnx-capacitor.git
+cd dust-onnx-capacitor
+npm install && npm run build
+cd example && npm install
+```
+
+#### 2. Download an ONNX model
+
+The YOLO E2E scripts auto-download [yolo26s.onnx](https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx) (~37 MB). The plugin tests use a tiny Add fixture already included in `test/fixtures/`. To download the YOLO model yourself:
+
+```bash
+mkdir -p test/models
+curl -L --progress-bar -o test/models/yolo26s.onnx \
+  https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx
+```
+
+#### 3a. iOS
+
+```bash
+# Add platform (skip if ios/ already exists)
+npx cap add ios
+npx cap sync ios
+
+# Build
+cd ios/App
+xcodebuild -scheme App -sdk iphonesimulator \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -configuration Debug build
+cd ../..
+
+# Find the simulator UDID and install the app
+UDID=$(xcrun simctl list devices booted -j | python3 -c "
+import sys, json
+for devs in json.load(sys.stdin)['devices'].values():
+  for d in devs:
+    if d['state']=='Booted': print(d['udid']); break
+" 2>/dev/null | head -1)
+APP=$(find ~/Library/Developer/Xcode/DerivedData -name "App.app" \
+  -path "*Debug-iphonesimulator*" -not -path "*PlugIns*" | head -1)
+xcrun simctl install "$UDID" "$APP"
+
+# Copy the model into the app's data container
+DATA_DIR=$(xcrun simctl get_app_container "$UDID" io.t6x.onnx.test data)
+mkdir -p "$DATA_DIR/tmp"
+cp test/models/yolo26s.onnx "$DATA_DIR/tmp/"
+
+# Inject test-config.json so the app can discover the model path
+BUNDLE_DIR=$(xcrun simctl get_app_container "$UDID" io.t6x.onnx.test)
+echo "{\"fixturePath\":\"$DATA_DIR/tmp\"}" > "$BUNDLE_DIR/public/test-config.json"
+
+# Launch
+xcrun simctl launch "$UDID" io.t6x.onnx.test
+```
+
+> **Note:** iOS sandbox rules prevent the app from reading arbitrary paths. The model must be inside the app's data container, and `test-config.json` tells the WebView where to find it.
+
+#### 3b. Android
+
+```bash
+# Add platform (skip if android/ already exists)
+npx cap add android
+npx cap sync android
+
+# Push model and fixtures to device
+adb push test/models/yolo26s.onnx /data/local/tmp/
+adb push test/fixtures/tiny-test.onnx /data/local/tmp/
+
+# Build and install
+cd android && ./gradlew assembleDebug && cd ..
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+
+# Port-forward for HTTP result collection (tests only)
+adb reverse tcp:8099 tcp:8099
+
+# Launch
+adb shell am start -n io.t6x.onnx.test/.MainActivity
+```
+
+#### Interactive YOLO demo
+
+The example app has a **Demo** tab where you can load a YOLO model, pick an image from the gallery or camera, and run object detection interactively. Enter the model path in the text field (e.g., `/data/local/tmp/yolo26s.onnx` on Android) and tap **Load Model**.
+
+### Using a different ONNX model
+
+You can run any `.onnx` model — the plugin is not tied to YOLO. Here's how to swap it.
+
+#### 1. Pick a model
+
+ONNX models are available from:
+- [ONNX Model Zoo](https://github.com/onnx/models) — pre-trained vision, NLP, and audio models
+- [HuggingFace ONNX models](https://huggingface.co/models?library=onnx&sort=trending) — exported from PyTorch/TensorFlow
+- Export your own with `torch.onnx.export()` or `tf2onnx`
+
+For mobile, keep models under **50 MB** and prefer **opset 13+** for broad ONNX Runtime 1.20 compatibility.
+
+#### 2. Load your model
+
+```javascript
+const result = await ONNX.loadModel({
+  descriptor: {
+    id: 'my-model',         // any string — used as the session key
+    format: 'onnx',
+    url: '/absolute/path/to/model.onnx',
+  },
+  config: {
+    accelerator: 'auto',    // CoreML on iOS, NNAPI on Android, auto-fallback to CPU
+    threads: 4,
+    graphOptLevel: 'all',
+    memoryPattern: true,
+  },
+});
+
+// Inspect the model's expected inputs/outputs
+console.log(result.metadata.inputs);      // [{ name, dtype, shape }, ...]
+console.log(result.metadata.outputs);     // [{ name, dtype, shape }, ...]
+console.log(result.metadata.accelerator); // 'coreml', 'nnapi', or 'cpu'
+```
+
+#### 3. Prepare inputs and run inference
+
+Use the metadata to discover tensor names, shapes, and dtypes, then build inputs accordingly:
+
+```javascript
+// For image models, use preprocessImage to get a ready-to-use NCHW tensor
+const { tensor } = await ONNX.preprocessImage({
+  data: base64ImageNoPrefix,       // raw base64, no data:image/... prefix
+  width: 640,
+  height: 640,
+  config: { resize: 'letterbox', normalization: 'zero_to_1' },
+});
+
+const result = await ONNX.runInference({
+  modelId: 'my-model',
+  inputs: [{ name: 'images', data: tensor.data, shape: [1, 3, 640, 640], dtype: 'float32' }],
+});
+
+// For non-image models, pass raw tensor data directly
+const result2 = await ONNX.runInference({
+  modelId: 'my-model',
+  inputs: [{ name: 'input_ids', data: [101, 2023, 2003, 1037, 3231, 102], shape: [1, 6], dtype: 'int64' }],
+});
+```
+
+#### 4. Configuration reference
+
+| Config key | Default | What it does |
+|-----------|---------|-------------|
+| `accelerator` | `'auto'` | Execution provider. `'auto'` picks CoreML (iOS) or NNAPI (Android). Falls back to CPU transparently. |
+| `threads` | (ORT default) | Thread count. Pass a number for both inter/intra-op, or `{ interOp: 2, intraOp: 4 }` for fine control. |
+| `graphOptLevel` | `'all'` | Graph optimization level. `'all'` applies all optimizations. Use `'disable'` for debugging. |
+| `memoryPattern` | `true` | Pre-allocate memory based on tensor shapes. Disable only if shapes vary wildly between runs. |
+
+#### 5. Deploy the model file
+
+Same as above — `adb push` for Android, `cp` into the app's data container for iOS.
+
+### Caveats
+
+**Input tensor names and shapes must match exactly.** Unlike LLM inference where you just provide a prompt, ONNX models require tensors with specific names, shapes, and dtypes. Use `getModelMetadata()` after loading to discover what the model expects. Mismatches produce `shapeError` or `dtypeError` before inference runs.
+
+**Dynamic dimensions accept any size, static dimensions don't.** If metadata shows `shape: [-1, 3, 224, 224]`, the first dimension is dynamic (batch size) and accepts any value, but the remaining three must be exactly `3`, `224`, `224`.
+
+**`accelerator: 'auto'` may fall back to CPU silently.** Not all models support CoreML or NNAPI — unsupported ops cause the EP to fail initialization. The plugin retries with CPU automatically. Check `metadata.accelerator` in the load result to see which EP was actually used.
+
+**CoreML first-load compiles the model (~5–15s).** On iOS with CoreML, the first load compiles the ONNX graph to an internal format. This is cached in `Application Support/onnx-cache/{modelId}/` and skipped on subsequent loads of the same model.
+
+**`preprocessImage` expects raw base64, not a data URL.** Strip the `data:image/jpeg;base64,` prefix before passing. The tensor output is always `[1, 3, H, W]` NCHW float32 — verify this matches your model's expected input layout.
+
+**Large tensor data crosses the bridge as JSON arrays.** Inference inputs and outputs are serialized as `number[]` over the Capacitor bridge. For very large tensors (e.g., high-resolution images), this can be slow. Use `preprocessImage` on the native side instead of sending raw pixel data from JavaScript.
+
+**ONNX Runtime version compatibility.** The plugin bundles ONNX Runtime 1.20. Models exported with newer opsets may use ops not yet supported. Stick to **opset 13–20** for best compatibility.
+
+**iOS sandbox: models must be in the app container.** Unlike Android where `/data/local/tmp/` is readable, iOS apps can only read files inside their own sandbox. Copy models into the app's data container (Documents or tmp) and use the absolute path from there.
+
+**`cap sync` may regenerate patched files.** If you manually set the iOS deployment target to 16.0 or Android minSdk to 26, `cap sync` can overwrite those changes. Re-apply patches after syncing. The E2E test scripts handle this automatically, but manual runs require awareness.
+
 ## Development
 
 ```bash
