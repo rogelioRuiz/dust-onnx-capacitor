@@ -45,6 +45,23 @@
 
 ---
 
+## Demo
+
+<table>
+  <tr>
+    <th align="center">Android</th>
+    <th align="center">iOS</th>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="yolo-e2e-android.png" width="320" alt="YOLO object detection on Android">
+    </td>
+    <td align="center">
+      <img src="yolo-e2e-ios.png" width="320" alt="YOLO object detection on iOS">
+    </td>
+  </tr>
+</table>
+
 # capacitor-onnx
 
 Capacitor plugin for on-device ONNX Runtime model loading, image preprocessing, and tensor inference over `.onnx` files.
@@ -422,11 +439,14 @@ capacitor-onnx/
 │       ├── ONNXRegistryTests.swift        # 9 O5 registry/session lifecycle tests
 │       └── ONNXPipelineTests.swift       # 7 O6 pipeline tests
 ├── example/                      # E2E test app
-│   ├── www/index.html            # Test runner UI (14 tests)
-│   ├── test-e2e-android.mjs      # Android E2E runner
-│   ├── test-e2e-ios.mjs          # iOS E2E runner
+│   ├── www/index.html            # Test runner UI (14 tests + YOLO demo)
+│   ├── test-e2e-android.mjs      # Android E2E runner (14 tests)
+│   ├── test-e2e-ios.mjs          # iOS E2E runner (14 tests)
+│   ├── test-e2e-yolo-android.mjs # YOLO detection E2E (Android)
+│   ├── test-e2e-yolo-ios.mjs     # YOLO detection E2E (iOS)
 │   └── capacitor.config.json
-├── scripts/
+├── test/
+│   ├── fixtures/tiny-test.onnx   # Minimal Add model for E2E
 │   └── generate-test-fixture.py  # Generates tiny-test.onnx
 ├── package.json
 ├── DustCapacitorOnnx.podspec
