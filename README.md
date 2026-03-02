@@ -14,9 +14,10 @@
 <p align="center">
   <a href="https://github.com/rogelioRuiz/dust/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
   <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-informational">
-  <img alt="npm" src="https://img.shields.io/badge/npm-%40dust%2Fcapacitor--onnx-cb3837">
+  <img alt="npm" src="https://img.shields.io/badge/npm-dust--onnx--capacitor-cb3837">
   <img alt="Capacitor" src="https://img.shields.io/badge/Capacitor-7%20%7C%208-119EFF">
   <img alt="ONNX" src="https://img.shields.io/badge/ONNX_Runtime-1.20-005CED">
+  <a href="https://github.com/rogelioRuiz/dust-onnx-capacitor/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/rogelioRuiz/dust-onnx-capacitor/actions/workflows/ci.yml/badge.svg?branch=main"></a>
 </p>
 
 ---
@@ -59,11 +60,11 @@ Capacitor plugin for on-device ONNX Runtime model loading, image preprocessing, 
 ## Install
 
 ```bash
-npm install capacitor-onnx @dust/capacitor-core
+npm install dust-onnx-capacitor dust-core-capacitor
 npx cap sync
 ```
 
-`@dust/capacitor-core` is a required peer dependency — it provides the shared ML contract types (`DustModelServer`, `DustModelSession`, `DustCoreError`, etc.) that capacitor-onnx implements.
+`dust-core-capacitor` is a required peer dependency — it provides the shared ML contract types (`DustModelServer`, `DustModelSession`, `DustCoreError`, etc.) that capacitor-onnx implements.
 
 ### iOS (CocoaPods)
 
@@ -359,7 +360,7 @@ interface RunPipelineResult {
        │                 │
        └────────┬────────┘
                 ▼
-        @dust/capacitor-core
+        dust-core-capacitor
     (shared ML contracts)
 ```
 
