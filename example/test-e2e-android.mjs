@@ -15,11 +15,8 @@ const ADB = process.env.ADB_PATH || 'adb'
 const FIXTURE_PATH = path.join(
   __dirname,
   '..',
-  '..',
-  'dust-onnx-swift',
-  'Tests',
-  'DustOnnxTests',
-  'Fixtures',
+  'test',
+  'fixtures',
   'tiny-test.onnx',
 )
 

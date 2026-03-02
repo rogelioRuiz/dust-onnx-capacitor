@@ -6,3 +6,5 @@ android/.cxx/
 .DS_Store
 *.tsbuildinfo
 *.tgz
+test/models/
+!test/fixtures/

@@ -29,11 +29,8 @@ const TIMEOUT_MS = 120_000
 const FIXTURE_PATH = path.join(
   __dirname,
   '..',
-  '..',
-  'dust-onnx-swift',
-  'Tests',
-  'DustOnnxTests',
-  'Fixtures',
+  'test',
+  'fixtures',
   'tiny-test.onnx',
 )
 

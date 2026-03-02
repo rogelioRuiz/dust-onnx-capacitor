@@ -429,11 +429,12 @@
       })
 
       // ── Visual injection hook (used by bootYoloE2E) ─
-      window.__yoloDemoVisual = function (dataURL, naturalW, naturalH, detections, inferenceMs) {
+      window.__yoloDemoVisual = function (dataURL, naturalW, naturalH, detections, inferenceMs, modelName) {
         demoState.imageDataURL    = dataURL
         demoState.imageNaturalW   = naturalW
         demoState.imageNaturalH   = naturalH
         demoState.lastDetections  = detections
+        if (modelName) els.modelLabel.textContent = modelName
         els.img.onload = function () {
           requestAnimationFrame(function () {
             // Hide stats bar so #image-area has full height when we measure
@@ -1021,10 +1022,10 @@
         await postResult({ error: 'loadModel failed: ' + (e.message || e.code) }); return
       }
 
-      // Fetch image from Documents via capacitor file protocol
+      // Fetch image — Android provides imageUrl served by the runner; iOS uses capacitor file protocol
       var imgBase64, imgW, imgH, imgObjUrl
       try {
-        var fileUrl = 'capacitor://localhost/_capacitor_file_' + task.imagePath
+        var fileUrl = task.imageUrl || ('capacitor://localhost/_capacitor_file_' + task.imagePath)
         var imgResp = await fetch(fileUrl)
         if (!imgResp.ok) throw new Error('fetch status ' + imgResp.status)
         var blob = await imgResp.blob()
@@ -1093,7 +1094,7 @@
       try {
         switchMode(true)   // switch to DEMO tab
         if (typeof window.__yoloDemoVisual === 'function') {
-          window.__yoloDemoVisual(imgObjUrl, imgW, imgH, dets, inferMs)
+          window.__yoloDemoVisual(imgObjUrl, imgW, imgH, dets, inferMs, task.modelPath.split('/').pop())
         }
       } catch (_) {}
 

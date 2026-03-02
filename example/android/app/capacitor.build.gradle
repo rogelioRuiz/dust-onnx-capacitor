@@ -9,8 +9,8 @@ android {
 
 apply from: "../capacitor-cordova-android-plugins/cordova.variables.gradle"
 dependencies {
-    implementation project(':capacitor-core')
-    implementation project(':capacitor-onnx')
+    implementation project(':dust-core-capacitor')
+    implementation project(':dust-onnx-capacitor')
 
 }
 

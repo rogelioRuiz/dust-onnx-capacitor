@@ -5,15 +5,16 @@
   "description": "E2E test app for capacitor-onnx plugin",
   "scripts": {
     "sync": "cap sync",
-    "android": "cap run android",
-    "ios": "cap run ios"
+    "build:apk": "cd android && ./gradlew assembleDebug",
+    "test:ios": "node test-e2e-ios.mjs",
+    "test:android": "node test-e2e-android.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",
     "@capacitor/core": "^8.1.0",
     "@capacitor/ios": "^8.1.0",
-    "@dust/capacitor-core": "file:../../capacitor-core",
-    "@dust/capacitor-onnx": "file:.."
+    "dust-core-capacitor": "file:../../capacitor-core",
+    "dust-onnx-capacitor": "file:.."
   },
   "devDependencies": {
     "@capacitor/cli": "^8.1.0"
