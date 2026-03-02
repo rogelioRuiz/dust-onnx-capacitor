@@ -25,6 +25,7 @@ const BUNDLE_ID = 'io.t6x.onnx.test'
 const RUNNER_PORT = 8099
 const TOTAL_TESTS = 14
 const TIMEOUT_MS = 120_000
+const IOS_MIN_VERSION = '16'
 
 const FIXTURE_PATH = path.join(
   __dirname,
@@ -78,6 +79,70 @@ function getBootedUDID() {
     }
   }
   return null
+}
+
+function findAvailableIPhone() {
+  const json = simctl('list devices available -j')
+  const data = JSON.parse(json)
+  for (const [runtime, devices] of Object.entries(data.devices)) {
+    if (!runtime.includes('iOS')) continue
+    for (const d of devices) {
+      if (d.name.includes('iPhone') && d.isAvailable) return d.udid
+    }
+  }
+  return null
+}
+
+function bootSimulator(udid) {
+  console.log(`  → Booting simulator ${udid}...`)
+  simctl(`boot ${udid}`)
+  for (let i = 0; i < 30; i++) {
+    const booted = getBootedUDID()
+    if (booted) return booted
+    execSync('sleep 1')
+  }
+  throw new Error('Simulator failed to boot within 30s')
+}
+
+// ─── Shell helper ────────────────────────────────────────────────────────────
+function run(cmd, opts = {}) {
+  const nodePath = execSync('which node', { encoding: 'utf8' }).trim()
+  return execSync(cmd, {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${path.dirname(nodePath)}:${process.env.PATH}` },
+    ...opts,
+  }).trim()
+}
+
+function npx(args, opts = {}) {
+  const npmPath = execSync('which npm', { encoding: 'utf8' }).trim()
+  const npxPath = path.join(path.dirname(npmPath), 'npx')
+  return run(`${npxPath} ${args}`, opts)
+}
+
+// ─── Project setup (idempotent) ──────────────────────────────────────────────
+function ensureIosPlatform() {
+  const iosDir = path.join(__dirname, 'ios')
+  if (fs.existsSync(iosDir)) return
+  console.log('  → cap add ios...')
+  npx('cap add ios', { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 })
+}
+
+function fixDeploymentTarget() {
+  const pbxproj = path.join(__dirname, 'ios/App/App.xcodeproj/project.pbxproj')
+  if (fs.existsSync(pbxproj)) {
+    let content = fs.readFileSync(pbxproj, 'utf8')
+    const re = /IPHONEOS_DEPLOYMENT_TARGET = \d+\.\d+/g
+    if (content.match(re)?.[0]?.includes(`= ${IOS_MIN_VERSION}.0`)) return
+    content = content.replace(re, `IPHONEOS_DEPLOYMENT_TARGET = ${IOS_MIN_VERSION}.0`)
+    fs.writeFileSync(pbxproj, content)
+  }
+  const capSpm = path.join(__dirname, 'ios/App/CapApp-SPM/Package.swift')
+  if (fs.existsSync(capSpm)) {
+    let content = fs.readFileSync(capSpm, 'utf8')
+    content = content.replace(/\.iOS\(\.v\d+\)/, `.iOS(.v${IOS_MIN_VERSION})`)
+    fs.writeFileSync(capSpm, content)
+  }
 }
 
 // ─── HTTP result collector ───────────────────────────────────────────────────
@@ -162,29 +227,58 @@ const TEST_NAMES = {
 async function main() {
   console.log('\n🔵 capacitor-onnx iOS Simulator E2E Test Suite\n')
 
-  // ─── Section 1: Simulator Setup ────────────────────────────────────────
-  logSection('1 — Simulator Setup')
+  // ─── Section 0: Project Setup ──────────────────────────────────────────
+  logSection('0 — Project Setup')
 
-  // 1.1 Find booted simulator
-  let udid
   try {
-    udid = getBootedUDID()
-    if (!udid) throw new Error('No booted simulator found')
-    pass('1.1 Booted simulator found', `UDID ${udid}`)
+    ensureIosPlatform()
+    fixDeploymentTarget()
+    pass('0.1 iOS platform ready')
   } catch (err) {
-    fail('1.1 Booted simulator found', err.message)
-    console.error('\nFatal: no booted simulator.\n')
+    fail('0.1 iOS platform ready', err.message?.slice(0, 200) || 'cap add ios failed')
     process.exit(1)
   }
 
-  // 1.2 Copy web assets (skip cap sync — it regenerates the Podfile incorrectly)
+  // ─── Section 1: Simulator Setup ────────────────────────────────────────
+  logSection('1 — Simulator Setup')
+
+  // 1.1 Find or boot simulator
+  let udid
   try {
-    const publicDir = path.join(__dirname, 'ios', 'App', 'App', 'public')
-    fs.mkdirSync(publicDir, { recursive: true })
-    execSync(`cp -r "${path.join(__dirname, 'www')}/." "${publicDir}"`, { encoding: 'utf8' })
-    pass('1.2 Web assets copied to ios/App/App/public/')
+    udid = getBootedUDID()
+    if (!udid) {
+      const available = findAvailableIPhone()
+      if (!available) throw new Error('No available iPhone simulator — install one via Xcode')
+      udid = bootSimulator(available)
+    }
+    pass('1.1 Simulator ready', `UDID ${udid}`)
   } catch (err) {
-    fail('1.2 Web assets copied', err.message)
+    fail('1.1 Simulator ready', err.message)
+    console.error('\nFatal: no simulator available.\n')
+    process.exit(1)
+  }
+
+  // 1.2 cap sync ios
+  try {
+    console.log('  → cap sync ios...')
+    npx('cap sync ios', {
+      cwd: __dirname,
+      timeout: 120_000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    fixDeploymentTarget()
+    pass('1.2 cap sync ios')
+  } catch (err) {
+    // Manually copy web assets as fallback
+    try {
+      const publicDir = path.join(__dirname, 'ios', 'App', 'App', 'public')
+      fs.mkdirSync(publicDir, { recursive: true })
+      execSync(`cp -r "${path.join(__dirname, 'www')}/." "${publicDir}"`, { encoding: 'utf8' })
+      pass('1.2 web assets copied (manual fallback)')
+    } catch (e2) {
+      fail('1.2 web assets', e2.message?.slice(0, 200) || 'failed')
+      process.exit(1)
+    }
   }
 
   // 1.3 Build for simulator
@@ -199,13 +293,13 @@ async function main() {
       {
         cwd: path.join(__dirname, 'ios', 'App'),
         encoding: 'utf8',
-        timeout: 180000,
+        timeout: 300_000,
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     )
     pass('1.3 xcodebuild succeeded')
   } catch (err) {
-    const lines = (err.stderr || err.stdout || err.message).split('\n')
+    const lines = (err.stderr || err.stdout || err.message || '').split('\n')
     const errorLines = lines.filter((l) => l.includes('error:')).slice(0, 3).join(' | ')
     fail('1.3 xcodebuild succeeded', errorLines || 'build failed')
     process.exit(1)
