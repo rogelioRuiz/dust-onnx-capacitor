@@ -13,7 +13,7 @@
     "@capacitor/android": "^8.1.0",
     "@capacitor/core": "^8.1.0",
     "@capacitor/ios": "^8.1.0",
-    "dust-core-capacitor": "file:../../capacitor-core",
+    "dust-core-capacitor": "^0.1.0",
     "dust-onnx-capacitor": "file:.."
   },
   "devDependencies": {
