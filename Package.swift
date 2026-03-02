@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "DustCapacitorOnnx",
+    name: "DustOnnxCapacitor",
     platforms: [.iOS(.v16), .macOS(.v14)],
     products: [
         .library(
-            name: "DustCapacitorOnnx",
+            name: "DustOnnxCapacitor",
             targets: ["ONNXPlugin"]
         )
     ],
@@ -22,7 +22,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Capacitor", package: "capacitor-swift-pm"),
                 .product(name: "Cordova", package: "capacitor-swift-pm"),
-                .product(name: "DustCapacitorCore", package: "dust-core-capacitor"),
+                .product(name: "DustCoreCapacitor", package: "dust-core-capacitor"),
                 .product(name: "DustCore", package: "dust-core-swift"),
                 .product(name: "DustOnnx", package: "dust-onnx-swift"),
             ],
