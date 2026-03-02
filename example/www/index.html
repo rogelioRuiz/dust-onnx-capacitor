@@ -2,253 +2,1113 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>capacitor-onnx O1+O2 E2E</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>capacitor-onnx</title>
   <style>
-    body { font-family: monospace; background: #111827; color: #e5e7eb; margin: 0; padding: 16px; }
+    /* ── Reset & base ──────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    body {
+      display: flex;
+      flex-direction: column;
+      background: #111827;
+      color: #e5e7eb;
+      font-family: monospace;
+    }
+    .hidden { display: none !important; }
+    .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+    /* ── Tab bar ───────────────────────────────────── */
+    #tab-bar {
+      display: flex;
+      background: #0f1623;
+      border-bottom: 1px solid #1f2937;
+      flex-shrink: 0;
+      padding: 0 12px;
+    }
+    .tab {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: #6b7280;
+      font-family: monospace;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab.active { color: #f59e0b; border-bottom-color: #f59e0b; }
+
+    /* ── Demo header ───────────────────────────────── */
+    #demo-header {
+      flex-shrink: 0;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid #1f2937;
+      background: #0f1623;
+    }
+    #demo-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    #demo-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f59e0b;
+      letter-spacing: 0.02em;
+    }
+    #demo-model-label {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 2px;
+      word-break: break-all;
+    }
+    #demo-status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      border: 1px solid #1f2937;
+      background: rgba(255,255,255,0.03);
+      font-size: 11px;
+      color: #6b7280;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #f59e0b;
+      flex-shrink: 0;
+    }
+    .status-dot.loading { animation: pulse 1.3s ease-in-out infinite; }
+    .status-dot.ready   { background: #22c55e; animation: none; }
+    .status-dot.running { background: #6366f1; animation: pulse 0.9s ease-in-out infinite; }
+    .status-dot.error   { background: #ef4444; animation: none; }
+
+    /* ── Config row ────────────────────────────────── */
+    #demo-config-row { display: flex; gap: 8px; }
+    #demo-model-path {
+      flex: 1;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid #374151;
+      background: #1f2937;
+      color: #e5e7eb;
+      font-family: monospace;
+      font-size: 11px;
+      outline: none;
+    }
+    #demo-model-path:focus { border-color: #f59e0b; }
+
+    /* ── Demo main: image area ─────────────────────── */
+    #demo-main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 12px 12px 8px;
+      gap: 10px;
+    }
+    #image-area {
+      position: relative;
+      max-width: 100%;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #1f2937;
+      border: 1px solid #374151;
+      width: 100%;
+    }
+    #image-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 32px;
+      color: #4b5563;
+    }
+    #placeholder-icon { font-size: 48px; line-height: 1; }
+    #placeholder-text { font-size: 12px; text-align: center; }
+    #source-image {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+    }
+    #bbox-overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      border-radius: 10px;
+    }
+
+    /* ── Stats bar ─────────────────────────────────── */
+    #stats-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .stat-chip {
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #1f2937;
+      border: 1px solid #374151;
+      font-size: 11px;
+      color: #9ca3af;
+    }
+
+    /* ── Demo footer ───────────────────────────────── */
+    #demo-footer {
+      flex-shrink: 0;
+      padding: 10px 16px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+      border-top: 1px solid #1f2937;
+      background: #0f1623;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .action-btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #1f2937;
+      color: #e5e7eb;
+      font-family: monospace;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      letter-spacing: 0.03em;
+    }
+    .action-btn:disabled { opacity: 0.4; cursor: default; }
+    .action-btn:not(:disabled):hover { background: #374151; }
+    .primary-btn { background: #1d2f1a; border-color: #22c55e; color: #4ade80; }
+    .primary-btn:not(:disabled):hover { background: #22341e; }
+    .detect-btn { background: #1c1d33; border-color: #6366f1; color: #a5b4fc; }
+    .detect-btn:not(:disabled):hover { background: #232441; }
+
+    /* ── Test panel ────────────────────────────────── */
+    #test-panel {
+      padding: 16px;
+      overflow-y: auto;
+      font-family: monospace;
+    }
     h1 { margin: 0 0 4px; color: #f59e0b; font-size: 20px; }
     #status, #summary { margin-top: 12px; padding: 10px; border-radius: 6px; background: #1f2937; }
     .test { margin-top: 8px; padding: 8px 10px; border-radius: 6px; background: #1f2937; }
     .pass { border-left: 4px solid #22c55e; }
     .fail { border-left: 4px solid #ef4444; }
     .detail { color: #9ca3af; font-size: 12px; }
+
+    /* ── Animations ────────────────────────────────── */
+    @keyframes pulse {
+      0%,100% { transform: scale(1); opacity: 0.8; }
+      50%      { transform: scale(1.25); opacity: 1; }
+    }
   </style>
 </head>
 <body>
-  <h1>capacitor-onnx</h1>
-  <div>Stage O1+O2 lifecycle and inference tests</div>
-  <div id="status">Waiting for Capacitor bridge...</div>
-  <div id="tests"></div>
-  <div id="summary"></div>
+  <!-- Tab bar -->
+  <div id="tab-bar">
+    <button id="tab-demo" class="tab active" type="button">DEMO</button>
+    <button id="tab-test" class="tab" type="button">TEST</button>
+  </div>
+
+  <!-- DEMO PANEL -->
+  <div id="demo-panel" class="panel">
+    <header id="demo-header">
+      <div id="demo-header-row">
+        <div>
+          <div id="demo-title">YOLO Object Detection</div>
+          <div id="demo-model-label">No model loaded</div>
+        </div>
+        <div id="demo-status-pill">
+          <span id="demo-status-dot" class="status-dot loading"></span>
+          <span id="demo-status-label">Waiting</span>
+        </div>
+      </div>
+      <div id="demo-config-row">
+        <input
+          id="demo-model-path"
+          type="text"
+          value="/data/local/tmp/yolo26s.onnx"
+          placeholder="Model path on device..."
+          autocomplete="off"
+          autocorrect="off"
+          spellcheck="false"
+        />
+      </div>
+    </header>
+
+    <main id="demo-main">
+      <div id="image-area">
+        <div id="image-placeholder">
+          <div id="placeholder-icon">&#x1F4F7;</div>
+          <div id="placeholder-text">Pick an image or take a photo to begin</div>
+        </div>
+        <img id="source-image" class="hidden" alt="" />
+        <canvas id="bbox-overlay" class="hidden"></canvas>
+      </div>
+      <div id="stats-bar" class="hidden">
+        <span id="stat-time" class="stat-chip">--ms</span>
+        <span id="stat-count" class="stat-chip">0 objects</span>
+        <span id="stat-top" class="stat-chip">--</span>
+      </div>
+    </main>
+
+    <footer id="demo-footer">
+      <button id="btn-load-model" class="action-btn primary-btn" type="button">Load Model</button>
+      <button id="btn-gallery" class="action-btn" type="button" disabled>Gallery</button>
+      <button id="btn-camera" class="action-btn" type="button" disabled>Camera</button>
+      <button id="btn-detect" class="action-btn detect-btn" type="button" disabled>Detect</button>
+      <input id="input-gallery" type="file" accept="image/*" class="hidden" />
+      <input id="input-camera" type="file" accept="image/*" capture="environment" class="hidden" />
+    </footer>
+  </div>
+
+  <!-- TEST PANEL -->
+  <div id="test-panel" class="panel hidden">
+    <h1>capacitor-onnx</h1>
+    <div>Stage O1+O2 lifecycle and inference tests</div>
+    <div id="status">Waiting for Capacitor bridge...</div>
+    <div id="tests"></div>
+    <div id="summary"></div>
+  </div>
 
   <script src="capacitor.js"></script>
   <script>
-  (async function () {
-    var RUNNER_URL = 'http://127.0.0.1:8099'
+  // Register native ONNX plugin so window.Capacitor.Plugins.ONNX is available
+  if (window.Capacitor && window.Capacitor.registerPlugin) {
+    window.Capacitor.registerPlugin('ONNX')
+  }
+  var DEMO_MODE = true
+  var RUNNER_URL = 'http://127.0.0.1:8099'
+  var YOLO_CONF_THRESHOLD = 0.25
+  var YOLO_NMS_IOU_THRESHOLD = 0.45
+  var YOLO_INPUT_SIZE = 640
 
-    function setStatus(msg) { document.getElementById('status').textContent = msg }
+  var COCO_CLASSES = [
+    'person','bicycle','car','motorcycle','airplane','bus','train','truck','boat',
+    'traffic light','fire hydrant','stop sign','parking meter','bench','bird','cat',
+    'dog','horse','sheep','cow','elephant','bear','zebra','giraffe','backpack',
+    'umbrella','handbag','tie','suitcase','frisbee','skis','snowboard','sports ball',
+    'kite','baseball bat','baseball glove','skateboard','surfboard','tennis racket',
+    'bottle','wine glass','cup','fork','knife','spoon','bowl','banana','apple',
+    'sandwich','orange','broccoli','carrot','hot dog','pizza','donut','cake','chair',
+    'couch','potted plant','bed','dining table','toilet','tv','laptop','mouse',
+    'remote','keyboard','cell phone','microwave','oven','toaster','sink','refrigerator',
+    'book','clock','vase','scissors','teddy bear','hair drier','toothbrush'
+  ]
 
-    function render(name, status, detail) {
-      var id = 'test-' + name
-      var node = document.getElementById(id)
-      if (!node) {
-        node = document.createElement('div')
-        node.id = id
-        node.className = 'test'
-        document.getElementById('tests').appendChild(node)
-      }
-      node.className = 'test ' + status
-      node.innerHTML = '<div>' + name + '</div><div class="detail">' + (detail || '') + '</div>'
-    }
+  var BBOX_COLORS = [
+    '#ef4444','#f97316','#eab308','#22c55e','#06b6d4',
+    '#3b82f6','#8b5cf6','#ec4899','#14b8a6','#a855f7'
+  ]
 
-    async function post(path, payload) {
-      try {
-        await fetch(RUNNER_URL + path, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          keepalive: true,
-        })
-      } catch (_) {}
-    }
-
-    async function report(id, status, detail, error) {
-      render(id, status === 'pass' ? 'pass' : 'fail', detail || error || '')
-      await post('/__onnx_result', { id, status, detail, error })
-    }
-
-    async function done(passed, failed, total) {
-      document.getElementById('summary').textContent = passed + '/' + total + ' passed'
-      await post('/__onnx_done', { passed, failed, total })
-    }
-
-    function assert(v, msg) { if (!v) throw new Error(msg) }
-
-    async function expectReject(fn, code) {
-      try { await fn() } catch (e) {
-        if (e && e.code === code) return
-        throw new Error('Expected ' + code + ', got ' + JSON.stringify(e))
-      }
-      throw new Error('Expected rejection with code ' + code)
-    }
-
-    function sameArray(a, b) {
-      return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every(function (value, index) {
-        return value === b[index]
-      })
-    }
-
-    // Wait for Capacitor bridge
+  ;(function () {
     var ONNX = null
-    for (var i = 0; i < 50; i++) {
-      ONNX = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX
-      if (ONNX) break
-      await new Promise(function (r) { setTimeout(r, 200) })
-    }
-    if (!ONNX) { setStatus('ONNX plugin not found'); return }
 
-    // Platform-aware model paths
-    // iOS: test runner copies files to app Documents dir, writes test-config.json with basePath
-    // Android: test runner pushes files to /data/local/tmp/ via adb push
-    var platform = window.Capacitor.getPlatform()
-    var base = '/data/local/tmp'
-    if (platform === 'ios') {
-      try {
-        var resp = await fetch('test-config.json')
-        var cfg = await resp.json()
-        base = cfg.basePath
-      } catch (_) {
-        base = '/tmp'
+    // ── Bridge polling ───────────────────────────────
+    async function waitForBridge() {
+      for (var i = 0; i < 50; i++) {
+        var plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX
+        if (plugin) return plugin
+        await new Promise(function (r) { setTimeout(r, 200) })
       }
-    }
-    var VALID_PATH = base + '/tiny-test.onnx'
-    var CORRUPT_PATH = base + '/corrupt-test.onnx'
-    var MISSING_PATH = base + '/does-not-exist.onnx'
-
-    setStatus('Running tests (' + platform + ')...')
-
-    var passed = 0, failed = 0, total = 0
-
-    async function test(id, fn) {
-      total++
-      try { await fn(); passed++; await report(id, 'pass', 'ok') }
-      catch (e) { failed++; await report(id, 'fail', null, e.message || String(e)) }
+      return null
     }
 
-    await test('load-valid', async function () {
-      var r = await ONNX.loadModel({ descriptor: { id: 'tiny-test', format: 'onnx', url: VALID_PATH } })
-      assert(r.modelId === 'tiny-test', 'Unexpected modelId: ' + r.modelId)
-      assert(Array.isArray(r.metadata.inputs), 'Missing inputs metadata')
-      assert(Array.isArray(r.metadata.outputs), 'Missing outputs metadata')
-    })
+    // ── Mode switching ───────────────────────────────
+    function switchMode(demoMode) {
+      DEMO_MODE = demoMode
+      document.getElementById('demo-panel').classList.toggle('hidden', !demoMode)
+      document.getElementById('test-panel').classList.toggle('hidden', demoMode)
+      document.getElementById('tab-demo').classList.toggle('active', demoMode)
+      document.getElementById('tab-test').classList.toggle('active', !demoMode)
+    }
 
-    await test('load-missing', async function () {
-      await expectReject(function () {
-        return ONNX.loadModel({ descriptor: { id: 'missing', format: 'onnx', url: MISSING_PATH } })
-      }, 'inferenceFailed')
-    })
+    document.getElementById('tab-demo').addEventListener('click', function () { switchMode(true) })
+    document.getElementById('tab-test').addEventListener('click', function () { switchMode(false) })
+    switchMode(true)
 
-    await test('load-corrupt', async function () {
-      await expectReject(function () {
-        return ONNX.loadModel({ descriptor: { id: 'corrupt', format: 'onnx', url: CORRUPT_PATH } })
-      }, 'inferenceFailed')
-    })
+    bootDemo()
+    bootTestRunner()
+    bootYoloE2E()
 
-    await test('wrong-format', async function () {
-      await expectReject(function () {
-        return ONNX.loadModel({ descriptor: { id: 'wrong-fmt', format: 'gguf', url: VALID_PATH } })
-      }, 'formatUnsupported')
-    })
+    // ════════════════════════════════════════════════
+    // DEMO MODE
+    // ════════════════════════════════════════════════
+    async function bootDemo() {
+      var demoState = {
+        modelId: null,
+        modelLoading: false,
+        imageDataURL: null,
+        imageNaturalW: 0,
+        imageNaturalH: 0,
+        detecting: false,
+        lastDetections: []
+      }
 
-    await test('unload-clears-cache', async function () {
-      await ONNX.unloadModel({ modelId: 'tiny-test' })
-      var listed = await ONNX.listLoadedModels()
-      assert(Array.isArray(listed.modelIds), 'modelIds must be array')
-      assert(listed.modelIds.length === 0, 'Expected 0 models, got ' + listed.modelIds.length)
-    })
+      var els = {
+        statusDot:    document.getElementById('demo-status-dot'),
+        statusLabel:  document.getElementById('demo-status-label'),
+        modelLabel:   document.getElementById('demo-model-label'),
+        modelPath:    document.getElementById('demo-model-path'),
+        btnLoad:      document.getElementById('btn-load-model'),
+        btnGallery:   document.getElementById('btn-gallery'),
+        btnCamera:    document.getElementById('btn-camera'),
+        btnDetect:    document.getElementById('btn-detect'),
+        inputGallery: document.getElementById('input-gallery'),
+        inputCamera:  document.getElementById('input-camera'),
+        img:          document.getElementById('source-image'),
+        canvas:       document.getElementById('bbox-overlay'),
+        placeholder:  document.getElementById('image-placeholder'),
+        statsBar:     document.getElementById('stats-bar'),
+        statTime:     document.getElementById('stat-time'),
+        statCount:    document.getElementById('stat-count'),
+        statTop:      document.getElementById('stat-top')
+      }
 
-    await test('unload-unknown', async function () {
-      await expectReject(function () {
-        return ONNX.unloadModel({ modelId: 'missing-model' })
-      }, 'modelNotFound')
-    })
+      setDemoStatus('loading', 'Waiting for bridge...')
 
-    await test('load-same-model-twice', async function () {
-      await ONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
-      await ONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
-      var listed = await ONNX.listLoadedModels()
-      assert(listed.modelIds.length === 1, 'Expected 1 model, got ' + listed.modelIds.length)
-      await ONNX.unloadModel({ modelId: 'same-model' })
-    })
+      ONNX = await waitForBridge()
+      if (!ONNX) {
+        setDemoStatus('error', 'Plugin not found')
+        return
+      }
+      setDemoStatus('loading', 'Bridge ready')
 
-    await test('load-two-models', async function () {
-      await ONNX.loadModel({ descriptor: { id: 'model-a', format: 'onnx', url: VALID_PATH } })
-      await ONNX.loadModel({ descriptor: { id: 'model-b', format: 'onnx', url: VALID_PATH } })
-      var listed = await ONNX.listLoadedModels()
-      assert(listed.modelIds.includes('model-a'), 'model-a missing')
-      assert(listed.modelIds.includes('model-b'), 'model-b missing')
-    })
+      // On iOS, resolve the app Documents base path the same way the test runner does
+      if (window.Capacitor && window.Capacitor.getPlatform() === 'ios') {
+        try {
+          var cfg = await fetch('test-config.json').then(function (r) { return r.json() })
+          if (cfg && cfg.basePath) els.modelPath.value = cfg.basePath + '/yolo26s.onnx'
+        } catch (_) {
+          // test-config.json not present — user must set path manually
+        }
+      }
 
-    await test('run-float32', async function () {
-      await ONNX.loadModel({ descriptor: { id: 'infer-model', format: 'onnx', url: VALID_PATH } })
-      var result = await ONNX.runInference({
-        modelId: 'infer-model',
-        inputs: [
-          { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
-          { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
-        ],
+      els.btnLoad.addEventListener('click', handleLoadModel)
+      els.btnGallery.addEventListener('click', function () {
+        els.inputGallery.value = ''
+        els.inputGallery.click()
       })
-      assert(Array.isArray(result.outputs), 'outputs must be array')
-      assert(result.outputs.length === 1, 'Expected 1 output, got ' + result.outputs.length)
-      assert(result.outputs[0].dtype === 'float32', 'Unexpected output dtype: ' + result.outputs[0].dtype)
-      assert(sameArray(result.outputs[0].shape, [1, 3]), 'Unexpected output shape: ' + JSON.stringify(result.outputs[0].shape))
-      assert(sameArray(result.outputs[0].data, [5, 7, 9]), 'Unexpected output data: ' + JSON.stringify(result.outputs[0].data))
-    })
-
-    await test('shape-mismatch-rank', async function () {
-      await expectReject(function () {
-        return ONNX.runInference({
-          modelId: 'infer-model',
-          inputs: [
-            { name: 'input_a', dtype: 'float32', shape: [3], data: [1, 2, 3] },
-            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
-          ],
-        })
-      }, 'shapeError')
-    })
-
-    await test('shape-mismatch-dim', async function () {
-      await expectReject(function () {
-        return ONNX.runInference({
-          modelId: 'infer-model',
-          inputs: [
-            { name: 'input_a', dtype: 'float32', shape: [1, 5], data: [1, 2, 3, 4, 5] },
-            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
-          ],
-        })
-      }, 'shapeError')
-    })
-
-    await test('dtype-mismatch', async function () {
-      await expectReject(function () {
-        return ONNX.runInference({
-          modelId: 'infer-model',
-          inputs: [
-            { name: 'input_a', dtype: 'int32', shape: [1, 3], data: [1, 2, 3] },
-            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
-          ],
-        })
-      }, 'dtypeError')
-    })
-
-    await test('output-filter', async function () {
-      var result = await ONNX.runInference({
-        modelId: 'infer-model',
-        inputs: [
-          { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
-          { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
-        ],
-        outputNames: ['output'],
+      els.btnCamera.addEventListener('click', function () {
+        els.inputCamera.value = ''
+        els.inputCamera.click()
       })
-      assert(result.outputs.length === 1, 'Expected 1 filtered output, got ' + result.outputs.length)
-      assert(result.outputs[0].name === 'output', 'Unexpected output name: ' + result.outputs[0].name)
-    })
+      els.btnDetect.addEventListener('click', runDetection)
+      els.inputGallery.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) handleImageFile(e.target.files[0])
+      })
+      els.inputCamera.addEventListener('change', function (e) {
+        if (e.target.files && e.target.files[0]) handleImageFile(e.target.files[0])
+      })
 
-    await test('inference-unloaded', async function () {
-      await ONNX.unloadModel({ modelId: 'infer-model' })
-      await expectReject(function () {
-        return ONNX.runInference({
+      window.addEventListener('resize', function () {
+        if (demoState.lastDetections.length > 0) {
+          requestAnimationFrame(function () { drawDetections(demoState.lastDetections) })
+        }
+      })
+
+      // ── Visual injection hook (used by bootYoloE2E) ─
+      window.__yoloDemoVisual = function (dataURL, naturalW, naturalH, detections, inferenceMs) {
+        demoState.imageDataURL    = dataURL
+        demoState.imageNaturalW   = naturalW
+        demoState.imageNaturalH   = naturalH
+        demoState.lastDetections  = detections
+        els.img.onload = function () {
+          requestAnimationFrame(function () {
+            // Hide stats bar so #image-area has full height when we measure
+            els.statsBar.classList.add('hidden')
+            clearCanvas()
+            drawDetections(detections)
+            els.statsBar.classList.remove('hidden')
+            updateStats(inferenceMs, detections)
+            setDemoStatus('ready', 'Done')
+          })
+        }
+        els.img.src = dataURL
+        els.placeholder.classList.add('hidden')
+        els.img.classList.remove('hidden')
+        els.canvas.classList.remove('hidden')
+        if (demoState.modelId) {
+          els.btnDetect.disabled = false
+        }
+      }
+
+      // ── Status helper ────────────────────────────
+      function setDemoStatus(kind, label) {
+        els.statusDot.className = 'status-dot ' + kind
+        els.statusLabel.textContent = label
+      }
+
+      // ── Load model ───────────────────────────────
+      async function handleLoadModel() {
+        if (demoState.modelLoading) return
+        var modelPath = els.modelPath.value.trim()
+        if (!modelPath) return
+
+        demoState.modelLoading = true
+        els.btnLoad.disabled = true
+        els.btnLoad.textContent = 'Loading...'
+        setDemoStatus('loading', 'Loading model...')
+
+        try {
+          var result = await ONNX.loadModel({
+            descriptor: { id: 'yolo-demo', format: 'onnx', url: modelPath },
+            config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
+          })
+          demoState.modelId = result.modelId
+          els.modelLabel.textContent = modelPath.split('/').pop()
+          els.btnGallery.disabled = false
+          els.btnCamera.disabled = false
+          if (demoState.imageDataURL) els.btnDetect.disabled = false
+          setDemoStatus('ready', 'Ready')
+          if (demoState.imageDataURL) runDetection()
+        } catch (e) {
+          setDemoStatus('error', 'Load failed: ' + (e.message || e.code || e))
+        } finally {
+          demoState.modelLoading = false
+          els.btnLoad.disabled = false
+          els.btnLoad.textContent = 'Load Model'
+        }
+      }
+
+      // ── Image selection ──────────────────────────
+      function handleImageFile(file) {
+        var reader = new FileReader()
+        reader.onload = function (ev) {
+          demoState.imageDataURL = ev.target.result
+          els.img.onload = function () {
+            demoState.imageNaturalW = els.img.naturalWidth
+            demoState.imageNaturalH = els.img.naturalHeight
+            clearCanvas()
+            demoState.lastDetections = []
+            if (demoState.modelId) {
+              els.btnDetect.disabled = false
+              runDetection()
+            } else {
+              setDemoStatus('loading', 'Load a model to detect')
+            }
+          }
+          els.img.src = ev.target.result
+          els.placeholder.classList.add('hidden')
+          els.img.classList.remove('hidden')
+          els.canvas.classList.remove('hidden')
+        }
+        reader.readAsDataURL(file)
+      }
+
+      // ── Run detection ────────────────────────────
+      async function runDetection() {
+        if (!demoState.modelId || !demoState.imageDataURL || demoState.detecting) return
+        demoState.detecting = true
+        els.btnDetect.disabled = true
+        setDemoStatus('running', 'Detecting...')
+
+        try {
+          var base64 = demoState.imageDataURL.split(',')[1]
+          var preprocessed = await ONNX.preprocessImage({
+            data: base64,
+            width: YOLO_INPUT_SIZE,
+            height: YOLO_INPUT_SIZE,
+            config: { resize: 'letterbox', normalization: 'zero_to_1' }
+          })
+          var tensor = preprocessed.tensor
+          var tensorShape = [1, 3, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE]
+
+          var t0 = Date.now()
+          var result = await ONNX.runInference({
+            modelId: demoState.modelId,
+            inputs: [{ name: 'images', data: tensor.data, shape: tensorShape, dtype: tensor.dtype }]
+          })
+          var inferenceMs = Date.now() - t0
+
+          var detections = parseYOLOOutput(result.outputs)
+          demoState.lastDetections = detections
+          els.statsBar.classList.add('hidden')
+          drawDetections(detections)
+          updateStats(inferenceMs, detections)
+          setDemoStatus('ready', 'Done')
+        } catch (e) {
+          setDemoStatus('error', 'Detection failed: ' + (e.message || e.code || e))
+        } finally {
+          demoState.detecting = false
+          els.btnDetect.disabled = false
+        }
+      }
+
+      // ── YOLO output parsing ──────────────────────
+      function parseYOLOOutput(outputs) {
+        var out   = outputs[0]
+        var shape = out.shape   // [1, dim1, dim2]
+        var data  = out.data
+        var dim1  = shape[1]
+        var dim2  = shape[2]
+        var dets  = []
+
+        if (dim1 === 84) {
+          // [1, 84, N] — ultralytics default: features in rows, anchors in cols
+          var N = dim2
+          for (var i = 0; i < N; i++) {
+            var cx = data[0 * N + i], cy = data[1 * N + i]
+            var w  = data[2 * N + i], h  = data[3 * N + i]
+            var bestScore = 0, bestClass = 0
+            for (var c = 0; c < 80; c++) {
+              var s = data[(4 + c) * N + i]
+              if (s > bestScore) { bestScore = s; bestClass = c }
+            }
+            if (bestScore < YOLO_CONF_THRESHOLD) continue
+            dets.push(cxcywh2det(cx, cy, w, h, bestScore, bestClass))
+          }
+        } else if (dim2 === 84) {
+          // [1, N, 84] — transposed: anchors in rows, features in cols
+          var N = dim1
+          for (var i = 0; i < N; i++) {
+            var base = i * 84
+            var cx = data[base], cy = data[base + 1], w = data[base + 2], h = data[base + 3]
+            var bestScore = 0, bestClass = 0
+            for (var c = 0; c < 80; c++) {
+              var s = data[base + 4 + c]
+              if (s > bestScore) { bestScore = s; bestClass = c }
+            }
+            if (bestScore < YOLO_CONF_THRESHOLD) continue
+            dets.push(cxcywh2det(cx, cy, w, h, bestScore, bestClass))
+          }
+        } else if (dim2 === 6) {
+          // [1, N, 6] — YOLO26 post-NMS: x1,y1,x2,y2,conf,classId per row
+          var N = dim1
+          for (var i = 0; i < N; i++) {
+            var base = i * 6
+            var conf = data[base + 4]
+            if (conf < YOLO_CONF_THRESHOLD) continue
+            var classId = Math.round(data[base + 5])
+            dets.push({
+              x1: data[base], y1: data[base + 1],
+              x2: data[base + 2], y2: data[base + 3],
+              confidence: conf,
+              classId: classId,
+              label: COCO_CLASSES[classId] || ('class_' + classId)
+            })
+          }
+        } else if (dim1 === 5) {
+          // [1, 5, N] — post-NMS column-major: x1,y1,x2,y2,conf
+          var N = dim2
+          for (var i = 0; i < N; i++) {
+            var conf = data[4 * N + i]
+            if (conf < YOLO_CONF_THRESHOLD) continue
+            dets.push({
+              x1: data[0 * N + i], y1: data[1 * N + i],
+              x2: data[2 * N + i], y2: data[3 * N + i],
+              confidence: conf, classId: 0, label: COCO_CLASSES[0] || 'object'
+            })
+          }
+        } else {
+          console.warn('Unknown YOLO output shape: ' + JSON.stringify(shape))
+        }
+
+        return nms(dets)
+      }
+
+      function cxcywh2det(cx, cy, w, h, score, classId) {
+        return {
+          x1: cx - w / 2, y1: cy - h / 2,
+          x2: cx + w / 2, y2: cy + h / 2,
+          confidence: score,
+          classId: classId,
+          label: COCO_CLASSES[classId] || ('class_' + classId)
+        }
+      }
+
+      // ── NMS ──────────────────────────────────────
+      function nms(dets) {
+        dets.sort(function (a, b) { return b.confidence - a.confidence })
+        var keep = []
+        var suppressed = new Array(dets.length).fill(false)
+        for (var i = 0; i < dets.length; i++) {
+          if (suppressed[i]) continue
+          keep.push(dets[i])
+          for (var j = i + 1; j < dets.length; j++) {
+            if (suppressed[j]) continue
+            if (iou(dets[i], dets[j]) > YOLO_NMS_IOU_THRESHOLD) suppressed[j] = true
+          }
+        }
+        return keep
+      }
+
+      function iou(a, b) {
+        var ix1 = Math.max(a.x1, b.x1), iy1 = Math.max(a.y1, b.y1)
+        var ix2 = Math.min(a.x2, b.x2), iy2 = Math.min(a.y2, b.y2)
+        var inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1)
+        if (inter === 0) return 0
+        var aArea = (a.x2 - a.x1) * (a.y2 - a.y1)
+        var bArea = (b.x2 - b.x1) * (b.y2 - b.y1)
+        return inter / (aArea + bArea - inter)
+      }
+
+      // ── Canvas / drawing ─────────────────────────
+      // Returns the rendered image bounds in canvas coordinates.
+      // The <img> is explicitly sized to fit, so its getBoundingClientRect()
+      // matches exactly where the image pixels are drawn.
+      function getRenderedImageBounds() {
+        var areaRect = document.getElementById('image-area').getBoundingClientRect()
+        var imgRect  = els.img.getBoundingClientRect()
+        return {
+          x: imgRect.left - areaRect.left,
+          y: imgRect.top  - areaRect.top,
+          w: imgRect.width,
+          h: imgRect.height
+        }
+      }
+
+      function modelToCanvas(det, bounds) {
+        // Map directly from the active image region in 640×640 model space
+        // to canvas, without going through original-image-pixel intermediates.
+        var imgW = demoState.imageNaturalW, imgH = demoState.imageNaturalH
+        var ms = YOLO_INPUT_SIZE
+        var scale = Math.min(ms / imgW, ms / imgH)
+        var padX  = (ms - imgW * scale) / 2
+        var padY  = (ms - imgH * scale) / 2
+        // Active model region width/height (the non-padded area)
+        var activeW = ms - 2 * padX
+        var activeH = ms - 2 * padY
+        return {
+          x1: bounds.x + (det.x1 - padX) / activeW * bounds.w,
+          y1: bounds.y + (det.y1 - padY) / activeH * bounds.h,
+          x2: bounds.x + (det.x2 - padX) / activeW * bounds.w,
+          y2: bounds.y + (det.y2 - padY) / activeH * bounds.h
+        }
+      }
+
+      function clearCanvas() {
+        var area = document.getElementById('image-area')
+        var cw = area.clientWidth, ch = area.clientHeight
+        els.canvas.width = cw; els.canvas.height = ch
+        els.canvas.getContext('2d').clearRect(0, 0, cw, ch)
+      }
+
+      function drawDetections(dets) {
+        var area = document.getElementById('image-area')
+        var cw = area.clientWidth, ch = area.clientHeight
+        // Read where the browser actually rendered the image pixels
+        var bounds = getRenderedImageBounds()
+        els.canvas.width  = cw
+        els.canvas.height = ch
+        var ctx = els.canvas.getContext('2d')
+        ctx.clearRect(0, 0, cw, ch)
+
+        if (!dets.length) return
+
+        for (var i = 0; i < dets.length; i++) {
+          var det    = dets[i]
+          var coords = modelToCanvas(det, bounds)
+          var color  = BBOX_COLORS[det.classId % BBOX_COLORS.length]
+          var bw = coords.x2 - coords.x1
+          var bh = coords.y2 - coords.y1
+          if (bw < 1 || bh < 1) continue
+
+          // Box stroke
+          ctx.strokeStyle = color
+          ctx.lineWidth   = 2
+          ctx.strokeRect(coords.x1, coords.y1, bw, bh)
+
+          // Label — drawn inside the top of the box
+          var labelText = det.label + ' ' + (det.confidence * 100).toFixed(0) + '%'
+          ctx.font = 'bold 11px monospace'
+          var tw = ctx.measureText(labelText).width
+          var lx = coords.x1
+          var ly = coords.y1 + 13
+          ctx.fillStyle = color
+          ctx.fillRect(lx - 1, ly - 13, tw + 6, 16)
+          ctx.fillStyle = '#111827'
+          ctx.fillText(labelText, lx + 2, ly)
+        }
+      }
+
+      function updateStats(inferenceMs, dets) {
+        els.statTime.textContent  = inferenceMs + 'ms'
+        els.statCount.textContent = dets.length + ' object' + (dets.length !== 1 ? 's' : '')
+        els.statTop.textContent   = dets.length > 0
+          ? dets[0].label + ' ' + (dets[0].confidence * 100).toFixed(0) + '%'
+          : '--'
+        els.statsBar.classList.remove('hidden')
+      }
+    } // end bootDemo
+
+    // ════════════════════════════════════════════════
+    // TEST MODE  (original runner, logic unchanged)
+    // ════════════════════════════════════════════════
+    async function bootTestRunner() {
+      function setStatus(msg) { document.getElementById('status').textContent = msg }
+
+      function render(name, status, detail) {
+        var id = 'test-' + name
+        var node = document.getElementById(id)
+        if (!node) {
+          node = document.createElement('div')
+          node.id = id
+          node.className = 'test'
+          document.getElementById('tests').appendChild(node)
+        }
+        node.className = 'test ' + status
+        node.innerHTML = '<div>' + name + '</div><div class="detail">' + (detail || '') + '</div>'
+      }
+
+      async function post(path, payload) {
+        try {
+          await fetch(RUNNER_URL + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            keepalive: true,
+          })
+        } catch (_) {}
+      }
+
+      async function report(id, status, detail, error) {
+        render(id, status === 'pass' ? 'pass' : 'fail', detail || error || '')
+        await post('/__onnx_result', { id: id, status: status, detail: detail, error: error })
+      }
+
+      async function done(passed, failed, total) {
+        document.getElementById('summary').textContent = passed + '/' + total + ' passed'
+        await post('/__onnx_done', { passed: passed, failed: failed, total: total })
+      }
+
+      function assert(v, msg) { if (!v) throw new Error(msg) }
+
+      async function expectReject(fn, code) {
+        try { await fn() } catch (e) {
+          if (e && e.code === code) return
+          throw new Error('Expected ' + code + ', got ' + JSON.stringify(e))
+        }
+        throw new Error('Expected rejection with code ' + code)
+      }
+
+      function sameArray(a, b) {
+        return Array.isArray(a) && Array.isArray(b) && a.length === b.length &&
+          a.every(function (value, index) { return value === b[index] })
+      }
+
+      // Wait for bridge
+      var testONNX = null
+      for (var i = 0; i < 50; i++) {
+        testONNX = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX
+        if (testONNX) break
+        await new Promise(function (r) { setTimeout(r, 200) })
+      }
+      if (!testONNX) { setStatus('ONNX plugin not found'); return }
+
+      // Platform-aware model paths
+      var platform = window.Capacitor.getPlatform()
+      var base = '/data/local/tmp'
+      if (platform === 'ios') {
+        try {
+          var resp = await fetch('test-config.json')
+          var cfg = await resp.json()
+          base = cfg.basePath
+        } catch (_) {
+          base = '/tmp'
+        }
+      }
+      var VALID_PATH   = base + '/tiny-test.onnx'
+      var CORRUPT_PATH = base + '/corrupt-test.onnx'
+      var MISSING_PATH = base + '/does-not-exist.onnx'
+
+      setStatus('Running tests (' + platform + ')...')
+
+      var passed = 0, failed = 0, total = 0
+
+      async function test(id, fn) {
+        total++
+        try { await fn(); passed++; await report(id, 'pass', 'ok') }
+        catch (e) { failed++; await report(id, 'fail', null, e.message || String(e)) }
+      }
+
+      await test('load-valid', async function () {
+        var r = await testONNX.loadModel({ descriptor: { id: 'tiny-test', format: 'onnx', url: VALID_PATH } })
+        assert(r.modelId === 'tiny-test', 'Unexpected modelId: ' + r.modelId)
+        assert(Array.isArray(r.metadata.inputs), 'Missing inputs metadata')
+        assert(Array.isArray(r.metadata.outputs), 'Missing outputs metadata')
+      })
+
+      await test('load-missing', async function () {
+        await expectReject(function () {
+          return testONNX.loadModel({ descriptor: { id: 'missing', format: 'onnx', url: MISSING_PATH } })
+        }, 'inferenceFailed')
+      })
+
+      await test('load-corrupt', async function () {
+        await expectReject(function () {
+          return testONNX.loadModel({ descriptor: { id: 'corrupt', format: 'onnx', url: CORRUPT_PATH } })
+        }, 'inferenceFailed')
+      })
+
+      await test('wrong-format', async function () {
+        await expectReject(function () {
+          return testONNX.loadModel({ descriptor: { id: 'wrong-fmt', format: 'gguf', url: VALID_PATH } })
+        }, 'formatUnsupported')
+      })
+
+      await test('unload-clears-cache', async function () {
+        await testONNX.unloadModel({ modelId: 'tiny-test' })
+        var listed = await testONNX.listLoadedModels()
+        assert(Array.isArray(listed.modelIds), 'modelIds must be array')
+        assert(listed.modelIds.length === 0, 'Expected 0 models, got ' + listed.modelIds.length)
+      })
+
+      await test('unload-unknown', async function () {
+        await expectReject(function () {
+          return testONNX.unloadModel({ modelId: 'missing-model' })
+        }, 'modelNotFound')
+      })
+
+      await test('load-same-model-twice', async function () {
+        await testONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
+        await testONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
+        var listed = await testONNX.listLoadedModels()
+        assert(listed.modelIds.length === 1, 'Expected 1 model, got ' + listed.modelIds.length)
+        await testONNX.unloadModel({ modelId: 'same-model' })
+      })
+
+      await test('load-two-models', async function () {
+        await testONNX.loadModel({ descriptor: { id: 'model-a', format: 'onnx', url: VALID_PATH } })
+        await testONNX.loadModel({ descriptor: { id: 'model-b', format: 'onnx', url: VALID_PATH } })
+        var listed = await testONNX.listLoadedModels()
+        assert(listed.modelIds.includes('model-a'), 'model-a missing')
+        assert(listed.modelIds.includes('model-b'), 'model-b missing')
+      })
+
+      await test('run-float32', async function () {
+        await testONNX.loadModel({ descriptor: { id: 'infer-model', format: 'onnx', url: VALID_PATH } })
+        var result = await testONNX.runInference({
           modelId: 'infer-model',
           inputs: [
             { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
             { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
           ],
         })
-      }, 'modelNotFound')
-    })
+        assert(Array.isArray(result.outputs), 'outputs must be array')
+        assert(result.outputs.length === 1, 'Expected 1 output, got ' + result.outputs.length)
+        assert(result.outputs[0].dtype === 'float32', 'Unexpected output dtype: ' + result.outputs[0].dtype)
+        assert(sameArray(result.outputs[0].shape, [1, 3]), 'Unexpected output shape: ' + JSON.stringify(result.outputs[0].shape))
+        assert(sameArray(result.outputs[0].data, [5, 7, 9]), 'Unexpected output data: ' + JSON.stringify(result.outputs[0].data))
+      })
 
-    await done(passed, failed, total)
-    setStatus('Completed')
+      await test('shape-mismatch-rank', async function () {
+        await expectReject(function () {
+          return testONNX.runInference({
+            modelId: 'infer-model',
+            inputs: [
+              { name: 'input_a', dtype: 'float32', shape: [3], data: [1, 2, 3] },
+              { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+            ],
+          })
+        }, 'shapeError')
+      })
+
+      await test('shape-mismatch-dim', async function () {
+        await expectReject(function () {
+          return testONNX.runInference({
+            modelId: 'infer-model',
+            inputs: [
+              { name: 'input_a', dtype: 'float32', shape: [1, 5], data: [1, 2, 3, 4, 5] },
+              { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+            ],
+          })
+        }, 'shapeError')
+      })
+
+      await test('dtype-mismatch', async function () {
+        await expectReject(function () {
+          return testONNX.runInference({
+            modelId: 'infer-model',
+            inputs: [
+              { name: 'input_a', dtype: 'int32', shape: [1, 3], data: [1, 2, 3] },
+              { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+            ],
+          })
+        }, 'dtypeError')
+      })
+
+      await test('output-filter', async function () {
+        var result = await testONNX.runInference({
+          modelId: 'infer-model',
+          inputs: [
+            { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
+            { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+          ],
+          outputNames: ['output'],
+        })
+        assert(result.outputs.length === 1, 'Expected 1 filtered output, got ' + result.outputs.length)
+        assert(result.outputs[0].name === 'output', 'Unexpected output name: ' + result.outputs[0].name)
+      })
+
+      await test('inference-unloaded', async function () {
+        await testONNX.unloadModel({ modelId: 'infer-model' })
+        await expectReject(function () {
+          return testONNX.runInference({
+            modelId: 'infer-model',
+            inputs: [
+              { name: 'input_a', dtype: 'float32', shape: [1, 3], data: [1, 2, 3] },
+              { name: 'input_b', dtype: 'float32', shape: [1, 3], data: [4, 5, 6] },
+            ],
+          })
+        }, 'modelNotFound')
+      })
+
+      await done(passed, failed, total)
+      setStatus('Completed')
+    } // end bootTestRunner
+
+    // ════════════════════════════════════════════════
+    // YOLO E2E RUNNER  (polled by test-e2e-yolo-ios.mjs)
+    // ════════════════════════════════════════════════
+    async function bootYoloE2E() {
+      var E2E_URL = 'http://127.0.0.1:8098'
+
+      async function postResult(payload) {
+        try {
+          await fetch(E2E_URL + '/__yolo_result', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            keepalive: true
+          })
+        } catch (_) {}
+      }
+
+      // Poll for a task descriptor from the runner
+      var task = null
+      for (var i = 0; i < 150; i++) {  // 30s poll window
+        try {
+          var resp = await fetch(E2E_URL + '/__yolo_task', { signal: AbortSignal.timeout(1000) })
+          if (resp.ok) { task = await resp.json(); break }
+        } catch (_) {}
+        await new Promise(function (r) { setTimeout(r, 200) })
+      }
+      if (!task) return   // no runner active — silent exit
+
+      var ONNX = await waitForBridge()
+      if (!ONNX) { await postResult({ error: 'plugin not found' }); return }
+
+      // Load model
+      var modelResult
+      try {
+        modelResult = await ONNX.loadModel({
+          descriptor: { id: 'yolo-e2e', format: 'onnx', url: task.modelPath },
+          config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
+        })
+      } catch (e) {
+        await postResult({ error: 'loadModel failed: ' + (e.message || e.code) }); return
+      }
+
+      // Fetch image from Documents via capacitor file protocol
+      var imgBase64, imgW, imgH, imgObjUrl
+      try {
+        var fileUrl = 'capacitor://localhost/_capacitor_file_' + task.imagePath
+        var imgResp = await fetch(fileUrl)
+        if (!imgResp.ok) throw new Error('fetch status ' + imgResp.status)
+        var blob = await imgResp.blob()
+        imgBase64 = await new Promise(function (res, rej) {
+          var reader = new FileReader()
+          reader.onload = function (ev) { res(ev.target.result.split(',')[1]) }
+          reader.onerror = rej
+          reader.readAsDataURL(blob)
+        })
+        imgObjUrl = URL.createObjectURL(blob)
+        await new Promise(function (res) {
+          var img = new Image()
+          img.onload = function () { imgW = img.naturalWidth; imgH = img.naturalHeight; res() }
+          img.src = imgObjUrl
+        })
+      } catch (e) {
+        await postResult({ error: 'image fetch failed: ' + e.message }); return
+      }
+
+      // Preprocess — always request 640×640 output (letterbox handles aspect ratio)
+      var tensor
+      try {
+        var pp = await ONNX.preprocessImage({
+          data: imgBase64, width: 640, height: 640,
+          config: { resize: 'letterbox', normalization: 'zero_to_1' }
+        })
+        tensor = pp.tensor
+      } catch (e) {
+        await postResult({ error: 'preprocess failed: ' + (e.message || e.code) }); return
+      }
+
+      // Inference — always use 640×640 shape (preprocessImage may report original size)
+      var t0 = Date.now()
+      var inferResult
+      try {
+        inferResult = await ONNX.runInference({
+          modelId: modelResult.modelId,
+          inputs: [{ name: 'images', data: tensor.data, shape: [1, 3, 640, 640], dtype: tensor.dtype }]
+        })
+      } catch (e) {
+        await postResult({ error: 'inference failed: ' + (e.message || e.code) }); return
+      }
+      var inferMs = Date.now() - t0
+
+      // Parse output [1, N, 6]
+      var out = inferResult.outputs[0]
+      var shape = out.shape, data = out.data, dets = []
+      if (shape[2] === 6) {
+        var N = shape[1]
+        for (var i = 0; i < N; i++) {
+          var base = i * 6
+          var conf = data[base + 4]
+          if (conf < 0.25) continue
+          var cid = Math.round(data[base + 5])
+          dets.push({
+            x1: Math.round(data[base]),     y1: Math.round(data[base + 1]),
+            x2: Math.round(data[base + 2]), y2: Math.round(data[base + 3]),
+            confidence: Math.round(conf * 1000) / 1000,
+            classId: cid,
+            label: COCO_CLASSES[cid] || ('class_' + cid)
+          })
+        }
+      }
+
+      // Show results visually in the DEMO tab
+      try {
+        switchMode(true)   // switch to DEMO tab
+        if (typeof window.__yoloDemoVisual === 'function') {
+          window.__yoloDemoVisual(imgObjUrl, imgW, imgH, dets, inferMs)
+        }
+      } catch (_) {}
+
+      await ONNX.unloadModel({ modelId: modelResult.modelId }).catch(function () {})
+
+      await postResult({
+        ok: true,
+        outputShape: shape,
+        detectionCount: dets.length,
+        inferenceMs: inferMs,
+        imageSize: [imgW, imgH],
+        detections: dets
+      })
+    } // end bootYoloE2E
+
   })()
   </script>
 </body>
