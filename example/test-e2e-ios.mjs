@@ -55,6 +55,15 @@ function fail(name, error) {
   console.log(`  ❌ ${name} — ${error}`)
 }
 
+// ─── Xcode version helper ────────────────────────────────────────────────────
+function getXcodeMajorVersion() {
+  try {
+    const out = execSync('xcodebuild -version', { encoding: 'utf8' })
+    const m = out.match(/Xcode (\d+)/)
+    return m ? parseInt(m[1], 10) : 0
+  } catch { return 0 }
+}
+
 // ─── simctl helpers ──────────────────────────────────────────────────────────
 function simctl(args, opts = {}) {
   return execSync(`xcrun simctl ${args}`, { encoding: 'utf8', timeout: 30000, ...opts }).trim()
@@ -181,9 +190,12 @@ async function main() {
   // 1.3 Build for simulator
   try {
     console.log('  → Building (xcodebuild)...')
+    const xcodeMajor = getXcodeMajorVersion()
+    const explicitModulesFlag = xcodeMajor >= 26 ? ' SWIFT_ENABLE_EXPLICIT_MODULES=NO' : ''
     execSync(
       `xcodebuild -scheme App -sdk iphonesimulator ` +
-      `-destination "platform=iOS Simulator,id=${udid}" -configuration Debug build`,
+      `-destination "platform=iOS Simulator,id=${udid}" -configuration Debug build` +
+      explicitModulesFlag,
       {
         cwd: path.join(__dirname, 'ios', 'App'),
         encoding: 'utf8',
