@@ -62,6 +62,14 @@
   </tr>
 </table>
 
+**Run this demo in 3 commands:**
+
+```bash
+git clone https://github.com/rogelioRuiz/dust-onnx-capacitor && cd dust-onnx-capacitor/example
+npm install && npx cap sync
+npm run test:android   # or: npm run test:ios
+```
+
 # capacitor-onnx
 
 Capacitor plugin for on-device ONNX Runtime model loading, image preprocessing, and tensor inference over `.onnx` files.
