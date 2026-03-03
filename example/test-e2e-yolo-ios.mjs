@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT_DIR  = path.resolve(__dirname, '..')
+const VERBOSE = process.argv.includes('--verbose')
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BUNDLE_ID      = 'io.t6x.onnx.test'

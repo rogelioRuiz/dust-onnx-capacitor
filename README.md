@@ -70,6 +70,13 @@ npm install && npx cap sync
 npm run test:android   # or: npm run test:ios
 ```
 
+Add `--verbose` for full build output (xcodebuild, gradlew, cap sync):
+
+```bash
+npm run test:ios:verbose
+npm run test:android:verbose
+```
+
 # capacitor-onnx
 
 Capacitor plugin for on-device ONNX Runtime model loading, image preprocessing, and tensor inference over `.onnx` files.

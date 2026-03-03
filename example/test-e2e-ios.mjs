@@ -19,6 +19,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const VERBOSE = process.argv.includes('--verbose')
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const BUNDLE_ID = 'io.t6x.onnx.test'
@@ -107,11 +108,12 @@ function bootSimulator(udid) {
 // ─── Shell helper ────────────────────────────────────────────────────────────
 function run(cmd, opts = {}) {
   const nodePath = execSync('which node', { encoding: 'utf8' }).trim()
-  return execSync(cmd, {
+  const result = execSync(cmd, {
     encoding: 'utf8',
     env: { ...process.env, PATH: `${path.dirname(nodePath)}:${process.env.PATH}` },
     ...opts,
-  }).trim()
+  })
+  return (result || '').trim()
 }
 
 function npx(args, opts = {}) {
@@ -125,7 +127,7 @@ function ensureIosPlatform() {
   const iosDir = path.join(__dirname, 'ios')
   if (fs.existsSync(iosDir)) return
   console.log('  → cap add ios...')
-  npx('cap add ios', { cwd: __dirname, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000 })
+  npx('cap add ios', { cwd: __dirname, stdio: VERBOSE ? [0, 1, 2] : ['ignore', 'pipe', 'pipe'], timeout: 60_000 })
 }
 
 function fixDeploymentTarget() {
@@ -264,7 +266,7 @@ async function main() {
     npx('cap sync ios', {
       cwd: __dirname,
       timeout: 120_000,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: VERBOSE ? [0, 1, 2] : ['ignore', 'pipe', 'pipe'],
     })
     fixDeploymentTarget()
     pass('1.2 cap sync ios')
@@ -294,7 +296,7 @@ async function main() {
         cwd: path.join(__dirname, 'ios', 'App'),
         encoding: 'utf8',
         timeout: 300_000,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: VERBOSE ? [0, 1, 2] : ['ignore', 'pipe', 'pipe'],
       },
     )
     pass('1.3 xcodebuild succeeded')
