@@ -289,7 +289,7 @@ async function main() {
     const explicitModulesFlag = xcodeMajor >= 26 ? ' SWIFT_ENABLE_EXPLICIT_MODULES=NO' : ''
     execSync(
       `xcodebuild -scheme App -sdk iphonesimulator ` +
-      `-destination "platform=iOS Simulator,id=${udid}" -configuration Debug build` +
+      `-destination "platform=iOS Simulator,id=${udid}" -configuration Debug clean build` +
       explicitModulesFlag,
       {
         cwd: path.join(__dirname, 'ios', 'App'),
