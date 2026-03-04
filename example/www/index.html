@@ -625,15 +625,23 @@
         await state.Serve.registerModel({ descriptor: YOLO_DESCRIPTOR })
       } catch (_e) {}
 
-      demoState.modelReady = await checkYoloModelReady()
-      if (demoState.modelReady) {
-        var readyStatus = await getServeModelStatus(YOLO_MODEL_ID)
-        if (readyStatus && readyStatus.status && readyStatus.status.path) {
-          demoState.modelPath = readyStatus.status.path
-        }
+      var initStatus = await getServeModelStatus(YOLO_MODEL_ID)
+      if (initStatus && initStatus.status && initStatus.status.kind === 'ready') {
+        demoState.modelReady = true
+        demoState.modelPath = initStatus.status.path || ''
+        setLoadButton('load')
+        setDemoStatus('ready', 'Model cached')
+      } else if (initStatus && initStatus.status && initStatus.status.kind === 'downloading') {
+        demoState.downloading = true
+        demoState.downloadProgress = Math.round((initStatus.status.progress || 0) * 100)
+        updateDownloadProgress()
+        setLoadButton('downloading')
+        setDemoStatus('loading', 'Resuming download...')
+        attachYoloDownloadListeners()
+      } else {
+        setLoadButton('download')
+        setDemoStatus('loading', 'Ready to download')
       }
-      setLoadButton(demoState.modelReady ? 'load' : 'download')
-      setDemoStatus(demoState.modelReady ? 'ready' : 'loading', demoState.modelReady ? 'Model cached' : 'Ready to download')
 
       // ── Status helper ────────────────────────────
       function setDemoStatus(kind, label) {
@@ -676,6 +684,54 @@
         return checkServeModelReady(YOLO_MODEL_ID)
       }
 
+      var yoloDownloadHandles = []
+
+      function attachYoloDownloadListeners() {
+        cleanupYoloDownloadListeners()
+        state.Serve.addListener('sizeDisclosure', function (event) {
+          if (event.modelId !== YOLO_MODEL_ID) return
+          demoState.totalBytes = event.sizeBytes || demoState.totalBytes
+          updateDownloadProgress()
+        }).then(function (h) { yoloDownloadHandles.push(h) })
+
+        state.Serve.addListener('modelProgress', function (event) {
+          if (event.modelId !== YOLO_MODEL_ID) return
+          demoState.downloadedBytes = event.bytesDownloaded || 0
+          if (event.totalBytes) demoState.totalBytes = event.totalBytes
+          demoState.downloadProgress = demoState.totalBytes > 0
+            ? Math.min(100, Math.round((demoState.downloadedBytes / demoState.totalBytes) * 100))
+            : Math.round((event.progress || 0) * 100)
+          updateDownloadProgress()
+        }).then(function (h) { yoloDownloadHandles.push(h) })
+
+        state.Serve.addListener('modelReady', function (event) {
+          if (event.modelId !== YOLO_MODEL_ID) return
+          demoState.downloadProgress = 100
+          demoState.downloadedBytes = demoState.totalBytes || demoState.downloadedBytes
+          demoState.modelReady = true
+          demoState.modelPath = event.path || demoState.modelPath
+          demoState.downloading = false
+          updateDownloadProgress()
+          setLoadButton('load')
+          setDemoStatus('ready', 'Download complete')
+          cleanupYoloDownloadListeners()
+        }).then(function (h) { yoloDownloadHandles.push(h) })
+
+        state.Serve.addListener('modelFailed', function (event) {
+          if (event.modelId !== YOLO_MODEL_ID) return
+          demoState.downloading = false
+          setLoadButton('download')
+          setDemoStatus('error', (event.error && (event.error.detail || event.error.message)) || 'Download failed')
+          cleanupYoloDownloadListeners()
+        }).then(function (h) { yoloDownloadHandles.push(h) })
+      }
+
+      function cleanupYoloDownloadListeners() {
+        while (yoloDownloadHandles.length > 0) {
+          try { yoloDownloadHandles.pop().remove() } catch (_e) {}
+        }
+      }
+
       function downloadYoloModel() {
         demoState.downloading = true
         demoState.downloadProgress = 0
@@ -684,36 +740,12 @@
         updateDownloadProgress()
         setLoadButton('downloading')
         setDemoStatus('loading', 'Downloading model...')
+        attachYoloDownloadListeners()
 
-        return downloadServeModel({
-          modelId: YOLO_MODEL_ID,
-          descriptor: YOLO_DESCRIPTOR,
-          onSizeDisclosure: function (event) {
-            demoState.totalBytes = event.sizeBytes || demoState.totalBytes
-            updateDownloadProgress()
-          },
-          onProgress: function (event) {
-            demoState.downloadedBytes = event.bytesDownloaded || 0
-            if (event.totalBytes) demoState.totalBytes = event.totalBytes
-            demoState.downloadProgress = demoState.totalBytes > 0
-              ? Math.min(100, Math.round((demoState.downloadedBytes / demoState.totalBytes) * 100))
-              : (event.progress || demoState.downloadProgress)
-            updateDownloadProgress()
-          },
-          onReady: function (event) {
-            demoState.downloadProgress = 100
-            demoState.downloadedBytes = demoState.totalBytes || demoState.downloadedBytes
-            demoState.modelReady = true
-            demoState.modelPath = event.path || demoState.modelPath
-            updateDownloadProgress()
-            setLoadButton('load')
-            setDemoStatus('ready', 'Download complete')
-          },
-          onFailed: function () {
-            setLoadButton('download')
-          }
-        }).finally(function () {
+        return state.Serve.downloadModel({ modelId: YOLO_MODEL_ID }).catch(function (error) {
           demoState.downloading = false
+          setLoadButton('download')
+          setDemoStatus('error', error.message || 'Download failed')
         })
       }
 
