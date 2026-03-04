@@ -91,20 +91,53 @@
     .status-dot.running { background: #6366f1; animation: pulse 0.9s ease-in-out infinite; }
     .status-dot.error   { background: #ef4444; animation: none; }
 
-    /* ── Config row ────────────────────────────────── */
-    #demo-config-row { display: flex; gap: 8px; }
-    #demo-model-path {
-      flex: 1;
-      padding: 7px 10px;
-      border-radius: 6px;
+    /* ── Download card ─────────────────────────────── */
+    #download-card {
+      width: min(100%, 460px);
+      border-radius: 12px;
       border: 1px solid #374151;
-      background: #1f2937;
-      color: #e5e7eb;
-      font-family: monospace;
-      font-size: 11px;
-      outline: none;
+      background: linear-gradient(180deg, rgba(31,41,55,0.98), rgba(17,24,39,0.98));
+      padding: 14px;
+      box-shadow: 0 16px 36px rgba(0,0,0,0.22);
     }
-    #demo-model-path:focus { border-color: #f59e0b; }
+    #download-card-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f3f4f6;
+    }
+    #download-card-meta {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #9ca3af;
+      letter-spacing: 0.02em;
+    }
+    #download-progress {
+      margin-top: 12px;
+    }
+    .progress-bar {
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #111827;
+      border: 1px solid #374151;
+    }
+    .progress-bar-fill {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #22c55e, #86efac);
+      transition: width 0.18s ease;
+    }
+    #download-progress-text {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #9ca3af;
+      text-align: right;
+    }
+    #download-card-actions {
+      margin-top: 12px;
+      display: flex;
+      justify-content: flex-start;
+    }
 
     /* ── Demo main: image area ─────────────────────── */
     #demo-main {
@@ -115,6 +148,14 @@
       justify-content: center;
       overflow: hidden;
       padding: 12px 12px 8px;
+      gap: 10px;
+    }
+    #demo-workspace {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
       gap: 10px;
     }
     #image-area {
@@ -244,37 +285,41 @@
           <span id="demo-status-label">Waiting</span>
         </div>
       </div>
-      <div id="demo-config-row">
-        <input
-          id="demo-model-path"
-          type="text"
-          value="/data/local/tmp/yolo26s.onnx"
-          placeholder="Model path on device..."
-          autocomplete="off"
-          autocorrect="off"
-          spellcheck="false"
-        />
-      </div>
     </header>
 
     <main id="demo-main">
-      <div id="image-area">
-        <div id="image-placeholder">
-          <div id="placeholder-icon">&#x1F4F7;</div>
-          <div id="placeholder-text">Pick an image or take a photo to begin</div>
+      <div id="download-card">
+        <div id="download-card-title">YOLO26s</div>
+        <div id="download-card-meta">38.3 MB · ONNX</div>
+        <div id="download-progress" class="hidden">
+          <div class="progress-bar">
+            <div id="download-progress-fill" class="progress-bar-fill"></div>
+          </div>
+          <div id="download-progress-text">0%</div>
         </div>
-        <img id="source-image" class="hidden" alt="" />
-        <canvas id="bbox-overlay" class="hidden"></canvas>
+        <div id="download-card-actions">
+          <button id="btn-load-model" class="action-btn primary-btn" type="button" disabled>Checking...</button>
+        </div>
       </div>
-      <div id="stats-bar" class="hidden">
-        <span id="stat-time" class="stat-chip">--ms</span>
-        <span id="stat-count" class="stat-chip">0 objects</span>
-        <span id="stat-top" class="stat-chip">--</span>
+
+      <div id="demo-workspace" class="hidden">
+        <div id="image-area">
+          <div id="image-placeholder">
+            <div id="placeholder-icon">&#x1F4F7;</div>
+            <div id="placeholder-text">Pick an image or take a photo to begin</div>
+          </div>
+          <img id="source-image" class="hidden" alt="" />
+          <canvas id="bbox-overlay" class="hidden"></canvas>
+        </div>
+        <div id="stats-bar" class="hidden">
+          <span id="stat-time" class="stat-chip">--ms</span>
+          <span id="stat-count" class="stat-chip">0 objects</span>
+          <span id="stat-top" class="stat-chip">--</span>
+        </div>
       </div>
     </main>
 
-    <footer id="demo-footer">
-      <button id="btn-load-model" class="action-btn primary-btn" type="button">Load Model</button>
+    <footer id="demo-footer" class="hidden">
       <button id="btn-gallery" class="action-btn" type="button" disabled>Gallery</button>
       <button id="btn-camera" class="action-btn" type="button" disabled>Camera</button>
       <button id="btn-detect" class="action-btn detect-btn" type="button" disabled>Detect</button>
@@ -294,15 +339,29 @@
 
   <script src="capacitor.js"></script>
   <script>
-  // Register native ONNX plugin so window.Capacitor.Plugins.ONNX is available
+  // Register native plugins so window.Capacitor.Plugins.* is available
   if (window.Capacitor && window.Capacitor.registerPlugin) {
     window.Capacitor.registerPlugin('ONNX')
+    window.Capacitor.registerPlugin('Serve')
   }
   var DEMO_MODE = true
+  var SERVE_TEST_MODE = false
+  var SKIP_DOWNLOAD = false
+  var MODEL_PATH = ''
   var RUNNER_URL = 'http://127.0.0.1:8099'
   var YOLO_CONF_THRESHOLD = 0.25
   var YOLO_NMS_IOU_THRESHOLD = 0.45
   var YOLO_INPUT_SIZE = 640
+  var YOLO_MODEL_ID = 'yolo26s'
+  var YOLO_DESCRIPTOR = {
+    id: YOLO_MODEL_ID,
+    name: 'YOLO26s',
+    format: 'onnx',
+    url: 'https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx',
+    sizeBytes: 38291057,
+    sha256: 'b62eded258445be46fd869e957eb5fba50920d77d7957ccefdf47cf14e691bd5',
+    version: '1'
+  }
 
   var COCO_CLASSES = [
     'person','bicycle','car','motorcycle','airplane','bus','train','truck','boat',
@@ -323,7 +382,97 @@
   ]
 
   ;(function () {
-    var ONNX = null
+    var state = {
+      ONNX: null,
+      Serve: null
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes) return '0 B'
+      if (bytes < 1024) return bytes + ' B'
+      if (bytes < 1048576) return (bytes / 1024).toFixed(0) + ' KB'
+      return (bytes / 1048576).toFixed(1) + ' MB'
+    }
+
+    function cloneDescriptor(descriptor) {
+      return JSON.parse(JSON.stringify(descriptor))
+    }
+
+    async function getServeModelStatus(modelId) {
+      if (!state.Serve) return null
+      try {
+        return await state.Serve.getModelStatus({ modelId: modelId })
+      } catch (_e) {
+        return null
+      }
+    }
+
+    async function checkServeModelReady(modelId) {
+      var result = await getServeModelStatus(modelId)
+      return !!(result && result.status && result.status.kind === 'ready')
+    }
+
+    function downloadServeModel(options) {
+      return new Promise(async function (resolve, reject) {
+        if (!state.Serve) {
+          reject(new Error('Serve plugin not found'))
+          return
+        }
+
+        var handles = []
+
+        function track(handle) {
+          if (handle && typeof handle.remove === 'function') handles.push(handle)
+          return handle
+        }
+
+        function cleanup() {
+          while (handles.length > 0) {
+            try { handles.pop().remove() } catch (_e) {}
+          }
+        }
+
+        function fail(error) {
+          var err = error instanceof Error ? error : new Error(String(error))
+          cleanup()
+          if (options.onFailed) options.onFailed(err)
+          reject(err)
+        }
+
+        try {
+          await state.Serve.registerModel({ descriptor: options.descriptor })
+
+          track(await state.Serve.addListener('sizeDisclosure', function (event) {
+            if (event.modelId !== options.modelId) return
+            if (options.onSizeDisclosure) options.onSizeDisclosure(event)
+          }))
+
+          track(await state.Serve.addListener('modelProgress', function (event) {
+            if (event.modelId !== options.modelId) return
+            if (options.onProgress) options.onProgress(event)
+          }))
+
+          track(await state.Serve.addListener('modelReady', function (event) {
+            if (event.modelId !== options.modelId) return
+            cleanup()
+            if (options.onReady) options.onReady(event)
+            resolve(event.path)
+          }))
+
+          track(await state.Serve.addListener('modelFailed', function (event) {
+            if (event.modelId !== options.modelId) return
+            var message =
+              (event.error && (event.error.detail || event.error.message)) ||
+              'Download failed'
+            fail(new Error(message))
+          }))
+
+          await state.Serve.downloadModel({ modelId: options.modelId })
+        } catch (error) {
+          fail(error)
+        }
+      })
+    }
 
     // ── Bridge polling ───────────────────────────────
     async function waitForBridge() {
@@ -349,8 +498,10 @@
     switchMode(true)
 
     bootDemo()
-    bootTestRunner()
-    bootYoloE2E()
+    if (!SERVE_TEST_MODE) {
+      bootTestRunner()
+      bootYoloE2E()
+    }
 
     // ════════════════════════════════════════════════
     // DEMO MODE
@@ -359,6 +510,12 @@
       var demoState = {
         modelId: null,
         modelLoading: false,
+        modelReady: false,
+        modelPath: MODEL_PATH || '',
+        downloading: false,
+        downloadProgress: 0,
+        downloadedBytes: 0,
+        totalBytes: 0,
         imageDataURL: null,
         imageNaturalW: 0,
         imageNaturalH: 0,
@@ -370,7 +527,12 @@
         statusDot:    document.getElementById('demo-status-dot'),
         statusLabel:  document.getElementById('demo-status-label'),
         modelLabel:   document.getElementById('demo-model-label'),
-        modelPath:    document.getElementById('demo-model-path'),
+        downloadCard: document.getElementById('download-card'),
+        downloadProgress: document.getElementById('download-progress'),
+        downloadProgressFill: document.getElementById('download-progress-fill'),
+        downloadProgressText: document.getElementById('download-progress-text'),
+        workspace:    document.getElementById('demo-workspace'),
+        footer:       document.getElementById('demo-footer'),
         btnLoad:      document.getElementById('btn-load-model'),
         btnGallery:   document.getElementById('btn-gallery'),
         btnCamera:    document.getElementById('btn-camera'),
@@ -388,22 +550,15 @@
 
       setDemoStatus('loading', 'Waiting for bridge...')
 
-      ONNX = await waitForBridge()
-      if (!ONNX) {
+      state.ONNX = await waitForBridge()
+      if (!state.ONNX) {
         setDemoStatus('error', 'Plugin not found')
         return
       }
+      state.Serve = window.Capacitor && window.Capacitor.Plugins
+        ? (window.Capacitor.Plugins.Serve || null)
+        : null
       setDemoStatus('loading', 'Bridge ready')
-
-      // On iOS, resolve the app Documents base path the same way the test runner does
-      if (window.Capacitor && window.Capacitor.getPlatform() === 'ios') {
-        try {
-          var cfg = await fetch('test-config.json').then(function (r) { return r.json() })
-          if (cfg && cfg.basePath) els.modelPath.value = cfg.basePath + '/yolo26s.onnx'
-        } catch (_) {
-          // test-config.json not present — user must set path manually
-        }
-      }
 
       els.btnLoad.addEventListener('click', handleLoadModel)
       els.btnGallery.addEventListener('click', function () {
@@ -435,6 +590,7 @@
         demoState.imageNaturalH   = naturalH
         demoState.lastDetections  = detections
         if (modelName) els.modelLabel.textContent = modelName
+        showDetectionUi()
         els.img.onload = function () {
           requestAnimationFrame(function () {
             // Hide stats bar so #image-area has full height when we measure
@@ -455,41 +611,211 @@
         }
       }
 
+      await applyBootConfig()
+
+      if (SERVE_TEST_MODE) {
+        setDemoStatus('running', 'Running serve tests...')
+        await runServeTests()
+        return
+      }
+
+      if (SKIP_DOWNLOAD && MODEL_PATH) {
+        try {
+          await loadYoloFromPath(MODEL_PATH)
+          return
+        } catch (e) {
+          setDemoStatus('error', 'Load failed: ' + (e.message || e.code || e))
+          setLoadButton('load')
+          return
+        }
+      }
+
+      if (!state.Serve) {
+        setDemoStatus('error', 'Serve plugin not found')
+        els.btnLoad.disabled = true
+        return
+      }
+
+      try {
+        await state.Serve.registerModel({ descriptor: YOLO_DESCRIPTOR })
+      } catch (_e) {}
+
+      demoState.modelReady = await checkYoloModelReady()
+      if (demoState.modelReady) {
+        var readyStatus = await getServeModelStatus(YOLO_MODEL_ID)
+        if (readyStatus && readyStatus.status && readyStatus.status.path) {
+          demoState.modelPath = readyStatus.status.path
+        }
+      }
+      setLoadButton(demoState.modelReady ? 'load' : 'download')
+      setDemoStatus(demoState.modelReady ? 'ready' : 'loading', demoState.modelReady ? 'Model cached' : 'Ready to download')
+
       // ── Status helper ────────────────────────────
       function setDemoStatus(kind, label) {
         els.statusDot.className = 'status-dot ' + kind
         els.statusLabel.textContent = label
       }
 
+      function setLoadButton(mode) {
+        if (mode === 'downloading') {
+          els.btnLoad.disabled = true
+          els.btnLoad.textContent = 'Downloading...'
+          return
+        }
+        if (mode === 'loading') {
+          els.btnLoad.disabled = true
+          els.btnLoad.textContent = 'Loading...'
+          return
+        }
+        els.btnLoad.disabled = false
+        els.btnLoad.textContent = mode === 'load' ? 'Load Model' : 'Download Model'
+      }
+
+      function updateDownloadProgress() {
+        els.downloadProgress.classList.remove('hidden')
+        els.downloadProgressFill.style.width = demoState.downloadProgress + '%'
+        var text = demoState.downloadProgress + '%'
+        if (demoState.totalBytes > 0) {
+          text += '  ' + formatBytes(demoState.downloadedBytes) + ' / ' + formatBytes(demoState.totalBytes)
+        }
+        els.downloadProgressText.textContent = text
+      }
+
+      function showDetectionUi() {
+        els.downloadCard.classList.add('hidden')
+        els.workspace.classList.remove('hidden')
+        els.footer.classList.remove('hidden')
+      }
+
+      async function applyBootConfig() {
+        if (!window.Capacitor || window.Capacitor.getPlatform() !== 'ios') return
+        try {
+          var cfg = await fetch('test-config.json').then(function (r) { return r.json() })
+          if (cfg && cfg.basePath && !MODEL_PATH) MODEL_PATH = cfg.basePath + '/yolo26s.onnx'
+          if (cfg && cfg.modelPath) MODEL_PATH = cfg.modelPath
+          if (cfg && typeof cfg.skipDownload === 'boolean') SKIP_DOWNLOAD = cfg.skipDownload
+          if (MODEL_PATH) demoState.modelPath = MODEL_PATH
+        } catch (_) {}
+      }
+
+      async function checkYoloModelReady() {
+        return checkServeModelReady(YOLO_MODEL_ID)
+      }
+
+      function downloadYoloModel() {
+        demoState.downloading = true
+        demoState.downloadProgress = 0
+        demoState.downloadedBytes = 0
+        demoState.totalBytes = 0
+        updateDownloadProgress()
+        setLoadButton('downloading')
+        setDemoStatus('loading', 'Downloading model...')
+
+        return downloadServeModel({
+          modelId: YOLO_MODEL_ID,
+          descriptor: YOLO_DESCRIPTOR,
+          onSizeDisclosure: function (event) {
+            demoState.totalBytes = event.sizeBytes || demoState.totalBytes
+            updateDownloadProgress()
+          },
+          onProgress: function (event) {
+            demoState.downloadedBytes = event.bytesDownloaded || 0
+            if (event.totalBytes) demoState.totalBytes = event.totalBytes
+            demoState.downloadProgress = demoState.totalBytes > 0
+              ? Math.min(100, Math.round((demoState.downloadedBytes / demoState.totalBytes) * 100))
+              : (event.progress || demoState.downloadProgress)
+            updateDownloadProgress()
+          },
+          onReady: function (event) {
+            demoState.downloadProgress = 100
+            demoState.downloadedBytes = demoState.totalBytes || demoState.downloadedBytes
+            demoState.modelReady = true
+            demoState.modelPath = event.path || demoState.modelPath
+            updateDownloadProgress()
+            setLoadButton('load')
+            setDemoStatus('ready', 'Download complete')
+          },
+          onFailed: function () {
+            setLoadButton('download')
+          }
+        }).finally(function () {
+          demoState.downloading = false
+        })
+      }
+
+      function applyLoadedModel(result, absolutePath) {
+        demoState.modelId = result.modelId
+        demoState.modelReady = true
+        demoState.modelPath = absolutePath
+        var fileName = absolutePath.split('/').pop()
+        var accelerator = result && result.metadata && result.metadata.accelerator
+          ? result.metadata.accelerator
+          : 'auto'
+        els.modelLabel.textContent = fileName + ' • ' + accelerator
+        els.btnGallery.disabled = false
+        els.btnCamera.disabled = false
+        if (demoState.imageDataURL) els.btnDetect.disabled = false
+        showDetectionUi()
+        setDemoStatus('ready', 'Ready')
+      }
+
+      async function loadYoloFromPath(absolutePath) {
+        var result = await state.ONNX.loadModel({
+          descriptor: { id: 'yolo-demo', format: 'onnx', url: absolutePath },
+          config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
+        })
+        applyLoadedModel(result, absolutePath)
+        if (demoState.imageDataURL) runDetection()
+        return result
+      }
+
+      async function resolveServeManagedPath() {
+        if (demoState.modelPath) return demoState.modelPath
+        var status = await getServeModelStatus(YOLO_MODEL_ID)
+        if (status && status.status && status.status.path) {
+          demoState.modelPath = status.status.path
+          return demoState.modelPath
+        }
+        return ''
+      }
+
+      async function downloadAndLoad() {
+        var absolutePath = await resolveServeManagedPath()
+        if (!absolutePath) {
+          var ready = await checkYoloModelReady()
+          absolutePath = ready ? await resolveServeManagedPath() : await downloadYoloModel()
+        }
+        if (!absolutePath) throw new Error('No serve-managed model path available')
+        return loadYoloFromPath(absolutePath)
+      }
+
       // ── Load model ───────────────────────────────
       async function handleLoadModel() {
-        if (demoState.modelLoading) return
-        var modelPath = els.modelPath.value.trim()
-        if (!modelPath) return
+        if (demoState.modelLoading || demoState.downloading) return
+
+        if (!demoState.modelReady) {
+          try {
+            await downloadYoloModel()
+          } catch (e) {
+            setDemoStatus('error', 'Download failed: ' + (e.message || e.code || e))
+          }
+          return
+        }
 
         demoState.modelLoading = true
-        els.btnLoad.disabled = true
-        els.btnLoad.textContent = 'Loading...'
+        setLoadButton('loading')
         setDemoStatus('loading', 'Loading model...')
-
         try {
-          var result = await ONNX.loadModel({
-            descriptor: { id: 'yolo-demo', format: 'onnx', url: modelPath },
-            config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
-          })
-          demoState.modelId = result.modelId
-          els.modelLabel.textContent = modelPath.split('/').pop()
-          els.btnGallery.disabled = false
-          els.btnCamera.disabled = false
-          if (demoState.imageDataURL) els.btnDetect.disabled = false
-          setDemoStatus('ready', 'Ready')
-          if (demoState.imageDataURL) runDetection()
+          if (SKIP_DOWNLOAD && MODEL_PATH) {
+            await loadYoloFromPath(MODEL_PATH)
+          } else {
+            await downloadAndLoad()
+          }
         } catch (e) {
           setDemoStatus('error', 'Load failed: ' + (e.message || e.code || e))
         } finally {
           demoState.modelLoading = false
-          els.btnLoad.disabled = false
-          els.btnLoad.textContent = 'Load Model'
+          if (!demoState.modelId) setLoadButton('load')
         }
       }
 
@@ -527,7 +853,7 @@
 
         try {
           var base64 = demoState.imageDataURL.split(',')[1]
-          var preprocessed = await ONNX.preprocessImage({
+          var preprocessed = await state.ONNX.preprocessImage({
             data: base64,
             width: YOLO_INPUT_SIZE,
             height: YOLO_INPUT_SIZE,
@@ -537,7 +863,7 @@
           var tensorShape = [1, 3, YOLO_INPUT_SIZE, YOLO_INPUT_SIZE]
 
           var t0 = Date.now()
-          var result = await ONNX.runInference({
+          var result = await state.ONNX.runInference({
             modelId: demoState.modelId,
             inputs: [{ name: 'images', data: tensor.data, shape: tensorShape, dtype: tensor.dtype }]
           })
@@ -755,9 +1081,162 @@
     } // end bootDemo
 
     // ════════════════════════════════════════════════
+    // SERVE TEST MODE
+    // ════════════════════════════════════════════════
+    async function runServeTests() {
+      var passed = 0
+      var failed = 0
+      var total = 0
+
+      function assert(value, message) {
+        if (!value) throw new Error(message)
+      }
+
+      async function post(path, payload) {
+        try {
+          await fetch(RUNNER_URL + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            keepalive: true
+          })
+        } catch (_) {}
+      }
+
+      async function postResult(id, status, detail, error) {
+        await post('/__serve_result', { id: id, status: status, detail: detail, error: error })
+      }
+
+      async function postDone(fatal) {
+        await post('/__serve_done', { passed: passed, failed: failed, total: total, fatal: fatal || null })
+      }
+
+      async function t(id, fn, timeoutMs) {
+        total++
+        var startedAt = Date.now()
+        var limit = timeoutMs || 30000
+        try {
+          await Promise.race([
+            fn(),
+            new Promise(function (_resolve, reject) {
+              setTimeout(function () { reject(new Error('Timed out after ' + limit + 'ms')) }, limit)
+            })
+          ])
+          passed++
+          await postResult(id, 'pass', (Date.now() - startedAt) + 'ms')
+        } catch (error) {
+          failed++
+          await postResult(id, 'fail', null, (error && error.message ? error.message : String(error)).split('\n')[0])
+        }
+      }
+
+      try {
+        assert(state.Serve, 'Serve plugin must be registered')
+        assert(state.ONNX, 'ONNX plugin must be registered')
+
+        var testModelId = YOLO_MODEL_ID + '-serve-test'
+        var descriptor = cloneDescriptor(YOLO_DESCRIPTOR)
+        descriptor.id = testModelId
+        descriptor.version = 'serve-test-' + Date.now()
+
+        var sizeEvent = null
+        var progressEvent = null
+        var readyEvent = null
+        var servePath = ''
+
+        await t('S.1 registerModel() succeeds', async function () {
+          await state.Serve.registerModel({ descriptor: descriptor })
+        })
+
+        await t('S.2 listModels() returns descriptor + status', async function () {
+          var result = await state.Serve.listModels()
+          assert(result && Array.isArray(result.models), 'listModels() must return models[]')
+          var found = result.models.some(function (model) {
+            return model && model.descriptor && model.descriptor.id === testModelId && model.status
+          })
+          assert(found, 'listModels() must include ' + testModelId)
+        })
+
+        await t('S.3 getModelStatus() returns status.kind', async function () {
+          var result = await state.Serve.getModelStatus({ modelId: testModelId })
+          assert(result && result.status && typeof result.status.kind === 'string', 'status.kind must be a string')
+        })
+
+        await t('S.4 downloadModel() starts and completes', async function () {
+          servePath = await downloadServeModel({
+            modelId: testModelId,
+            descriptor: descriptor,
+            onSizeDisclosure: function (event) {
+              sizeEvent = event
+            },
+            onProgress: function (event) {
+              if (!progressEvent) progressEvent = event
+            },
+            onReady: function (event) {
+              readyEvent = event
+            }
+          })
+          assert(servePath, 'modelReady event must include a path')
+        }, 240000)
+
+        await t('S.5 sizeDisclosure emits modelId + sizeBytes', async function () {
+          assert(sizeEvent, 'sizeDisclosure event missing')
+          assert(sizeEvent.modelId === testModelId, 'sizeDisclosure modelId mismatch')
+          assert(sizeEvent.sizeBytes > 0, 'sizeDisclosure sizeBytes must be > 0')
+        })
+
+        await t('S.6 modelProgress emits download counters', async function () {
+          assert(progressEvent, 'modelProgress event missing')
+          assert(progressEvent.modelId === testModelId, 'modelProgress modelId mismatch')
+          assert(typeof progressEvent.bytesDownloaded === 'number', 'bytesDownloaded must be numeric')
+          var disclosedTotal = progressEvent.totalBytes || (sizeEvent && sizeEvent.sizeBytes) || 0
+          assert(disclosedTotal > 0, 'totalBytes must be > 0')
+        })
+
+        await t('S.7 modelReady emits modelId + path', async function () {
+          assert(readyEvent, 'modelReady event missing')
+          assert(readyEvent.modelId === testModelId, 'modelReady modelId mismatch')
+          assert(readyEvent.path, 'modelReady path must be set')
+        })
+
+        await t('S.8 getModelStatus() after ready returns path', async function () {
+          var result = await state.Serve.getModelStatus({ modelId: testModelId })
+          assert(result && result.status && result.status.kind === 'ready', 'status.kind must be ready')
+          assert(result.status.path, 'status.path must be set once ready')
+          servePath = result.status.path
+        })
+
+        await t('S.9 ONNX.loadModel() succeeds from serve path', async function () {
+          var result = await state.ONNX.loadModel({
+            descriptor: { id: 'yolo-serve-test', format: 'onnx', url: servePath },
+            config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
+          })
+          assert(result && result.modelId === 'yolo-serve-test', 'Unexpected modelId from ONNX.loadModel()')
+          await state.ONNX.unloadModel({ modelId: result.modelId })
+        }, 60000)
+
+        await t('S.10 registerModel() restores ready + path', async function () {
+          await state.Serve.registerModel({ descriptor: descriptor })
+          var result = await state.Serve.getModelStatus({ modelId: testModelId })
+          assert(result && result.status && result.status.kind === 'ready', 'registerModel() must preserve ready state')
+          assert(result.status.path, 'registerModel() must restore the cached path')
+        })
+
+        await postDone()
+      } catch (error) {
+        failed++
+        total++
+        await postResult('FATAL', 'fail', null, error && error.message ? error.message : String(error))
+        await postDone(error && error.message ? error.message : String(error))
+      }
+    }
+
+    // ════════════════════════════════════════════════
     // TEST MODE  (original runner, logic unchanged)
     // ════════════════════════════════════════════════
     async function bootTestRunner() {
+      if (SERVE_TEST_MODE) return
+
       function setStatus(msg) { document.getElementById('status').textContent = msg }
 
       function render(name, status, detail) {
@@ -1008,13 +1487,13 @@
       }
       if (!task) return   // no runner active — silent exit
 
-      var ONNX = await waitForBridge()
-      if (!ONNX) { await postResult({ error: 'plugin not found' }); return }
+      var onnx = await waitForBridge()
+      if (!onnx) { await postResult({ error: 'plugin not found' }); return }
 
       // Load model
       var modelResult
       try {
-        modelResult = await ONNX.loadModel({
+        modelResult = await onnx.loadModel({
           descriptor: { id: 'yolo-e2e', format: 'onnx', url: task.modelPath },
           config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
         })
@@ -1048,7 +1527,7 @@
       // Preprocess — always request 640×640 output (letterbox handles aspect ratio)
       var tensor
       try {
-        var pp = await ONNX.preprocessImage({
+        var pp = await onnx.preprocessImage({
           data: imgBase64, width: 640, height: 640,
           config: { resize: 'letterbox', normalization: 'zero_to_1' }
         })
@@ -1061,7 +1540,7 @@
       var t0 = Date.now()
       var inferResult
       try {
-        inferResult = await ONNX.runInference({
+        inferResult = await onnx.runInference({
           modelId: modelResult.modelId,
           inputs: [{ name: 'images', data: tensor.data, shape: [1, 3, 640, 640], dtype: tensor.dtype }]
         })
@@ -1098,7 +1577,7 @@
         }
       } catch (_) {}
 
-      await ONNX.unloadModel({ modelId: modelResult.modelId }).catch(function () {})
+      await onnx.unloadModel({ modelId: modelResult.modelId }).catch(function () {})
 
       await postResult({
         ok: true,

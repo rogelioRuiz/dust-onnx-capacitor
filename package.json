@@ -19,6 +19,7 @@
     "typecheck": "tsc --noEmit",
     "test:ios": "npm run build && cd example && npm install && node test-e2e-ios.mjs",
     "test:ios:verbose": "npm run build && cd example && npm install && node test-e2e-ios.mjs --verbose",
+    "test:serve-ios": "npm run build && cd example && npm install && node test-e2e-serve-ios.mjs",
     "test:yolo-ios": "npm run build && cd example && npm install && node test-e2e-yolo-ios.mjs",
     "test:android": "npm run build && cd example && npm install && node test-e2e-android.mjs",
     "test:android:verbose": "npm run build && cd example && npm install && node test-e2e-android.mjs --verbose",
@@ -53,13 +54,13 @@
   "peerDependencies": {
     "@capacitor/core": "^7.0.0 || ^8.0.0",
     "dust-core-capacitor": ">=0.1.0",
-    "dust-serve-capacitor": ">=0.1.5"
+    "dust-serve-capacitor": ">=0.1.8"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
     "@capacitor/core": "^8.0.0",
     "dust-core-capacitor": "^0.1.0",
-    "dust-serve-capacitor": "^0.1.5",
+    "dust-serve-capacitor": "^0.1.8",
     "typescript": "~5.7.0"
   },
   "engines": {

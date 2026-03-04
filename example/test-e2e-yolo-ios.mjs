@@ -151,6 +151,16 @@ if (!fs.existsSync(imagePath)) {
 }
 console.log(`  Docs:      ${docsDir}\n`)
 
+// Write test-config.json into the app bundle so applyBootConfig() picks up
+// skipDownload=true and bypasses the dust-serve download flow for this test.
+try {
+  const bundleDir = sim(`get_app_container ${DEVICE_ID} ${BUNDLE_ID}`)
+  const configPath = path.join(bundleDir, 'public', 'test-config.json')
+  fs.writeFileSync(configPath, JSON.stringify({ skipDownload: true, modelPath }))
+} catch (_) {
+  // Non-fatal: app falls back to serving path without skipDownload
+}
+
 const task = { modelPath, imagePath }
 
 // Start server (serves the task + waits for result)
