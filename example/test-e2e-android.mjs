@@ -29,7 +29,7 @@ const BUNDLE_ID = 'io.t6x.onnx.test'
 const RUNNER_PORT = 8099
 const TOTAL_TESTS = 14
 const TIMEOUT_MS = 120_000
-const ADB = process.env.ADB_PATH || 'adb'
+const ADB = findAdbBinary()
 const FIXTURE_PATH = path.join(__dirname, '..', 'test', 'fixtures', 'tiny-test.onnx')
 
 // ─── Test runner state ───────────────────────────────────────────────────────
@@ -79,6 +79,30 @@ function getConnectedDevice() {
   const lines = out.split('\n').slice(1).filter(l => l.includes('\tdevice'))
   if (lines.length === 0) return null
   return lines[0].split('\t')[0].trim()
+}
+
+function findAndroidSdkRoot() {
+  const candidates = [
+    process.env.ANDROID_HOME,
+    process.env.ANDROID_SDK_ROOT,
+    path.join(process.env.HOME, 'Library/Android/sdk'),   // macOS default
+    path.join(process.env.HOME, 'Android/Sdk'),           // Linux default
+  ].filter(Boolean)
+  for (const p of candidates) {
+    if (fs.existsSync(path.join(p, 'platform-tools'))) return p
+  }
+  return null
+}
+
+function findAdbBinary() {
+  if (process.env.ADB_PATH && fs.existsSync(process.env.ADB_PATH)) return process.env.ADB_PATH
+  const sdk = findAndroidSdkRoot()
+  if (sdk) {
+    const p = path.join(sdk, 'platform-tools/adb')
+    if (fs.existsSync(p)) return p
+  }
+  try { return execSync('which adb', { encoding: 'utf8' }).trim() } catch {}
+  return 'adb'
 }
 
 function findEmulatorBinary() {
@@ -289,6 +313,10 @@ async function main() {
     })
     pass('1.2 Android project synced')
 
+    const sdkRoot = findAndroidSdkRoot()
+    if (sdkRoot) {
+      fs.writeFileSync(path.join(__dirname, 'android/local.properties'), `sdk.dir=${sdkRoot}\n`)
+    }
     console.log('  → Building APK (./gradlew assembleDebug)...')
     run('./gradlew assembleDebug', { cwd: path.join(__dirname, 'android'), ...(VERBOSE && { stdio: [0, 1, 2] }) })
     if (!fs.existsSync(apkPath)) throw new Error('APK not found after build')
