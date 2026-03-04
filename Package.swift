@@ -15,7 +15,6 @@ let package = Package(
         .package(url: "https://github.com/rogelioRuiz/dust-core-capacitor.git", from: "0.1.0"),
         .package(url: "https://github.com/rogelioRuiz/dust-core-swift.git", from: "0.1.0"),
         .package(url: "https://github.com/rogelioRuiz/dust-onnx-swift.git", from: "0.1.2"),
-        .package(url: "https://github.com/rogelioRuiz/dust-serve-capacitor.git", from: "0.1.0"),
     ],
     targets: [
         .target(
@@ -26,7 +25,6 @@ let package = Package(
                 .product(name: "DustCoreCapacitor", package: "dust-core-capacitor"),
                 .product(name: "DustCore", package: "dust-core-swift"),
                 .product(name: "DustOnnx", package: "dust-onnx-swift"),
-                .product(name: "DustServeCapacitor", package: "dust-serve-capacitor"),
             ],
             path: "ios/Sources/ONNXPlugin"
         )
