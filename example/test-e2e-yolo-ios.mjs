@@ -61,7 +61,7 @@ function ensureModel() {
   console.log(`  → Downloading model (${MODEL_NAME}, ~37 MB)...`)
   fs.mkdirSync(MODEL_DIR, { recursive: true })
   execSync(`curl -L --progress-bar -o "${MODEL_PATH_LOCAL}" "${MODEL_URL}"`, {
-    stdio: ['ignore', process.stderr, 'pipe'],
+    stdio: ['ignore', 'pipe', process.stderr],
     timeout: 300_000,
   })
 }

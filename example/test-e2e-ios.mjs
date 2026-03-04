@@ -287,9 +287,11 @@ async function main() {
     console.log('  → Building (xcodebuild)...')
     const xcodeMajor = getXcodeMajorVersion()
     const explicitModulesFlag = xcodeMajor >= 26 ? ' SWIFT_ENABLE_EXPLICIT_MODULES=NO' : ''
+    const derivedDataPath = path.join(__dirname, 'ios', 'App', 'DerivedData')
     execSync(
       `xcodebuild -scheme App -sdk iphonesimulator ` +
-      `-destination "platform=iOS Simulator,id=${udid}" -configuration Debug clean build` +
+      `-destination "platform=iOS Simulator,id=${udid}" ` +
+      `-derivedDataPath "${derivedDataPath}" -configuration Debug build` +
       explicitModulesFlag,
       {
         cwd: path.join(__dirname, 'ios', 'App'),
@@ -309,23 +311,14 @@ async function main() {
   // 1.4 Install app
   let appPath
   try {
-    // Find newest App.app matching our bundle ID (multiple projects may share DerivedData)
+    // Find App.app in our scoped DerivedData path
+    const derivedDataPath = path.join(__dirname, 'ios', 'App', 'DerivedData')
     const candidates = execSync(
-      `find ~/Library/Developer/Xcode/DerivedData -name "App.app" -path "*/Debug-iphonesimulator/*" -not -path "*PlugIns*" 2>/dev/null`,
+      `find "${derivedDataPath}" -name "App.app" -path "*/Debug-iphonesimulator/*" -not -path "*PlugIns*" 2>/dev/null`,
       { encoding: 'utf8', shell: true, timeout: 15000 },
     ).trim().split('\n').filter(Boolean)
-    appPath = null
-    let newestMtime = 0
-    for (const candidate of candidates) {
-      try {
-        const bid = execSync(`defaults read "${candidate}/Info.plist" CFBundleIdentifier`, { encoding: 'utf8' }).trim()
-        if (bid === BUNDLE_ID) {
-          const mtime = fs.statSync(candidate).mtimeMs
-          if (mtime > newestMtime) { newestMtime = mtime; appPath = candidate }
-        }
-      } catch {}
-    }
-    if (!appPath) throw new Error(`App.app with bundle ID ${BUNDLE_ID} not found in DerivedData`)
+    appPath = candidates[0] || null
+    if (!appPath) throw new Error(`App.app not found in scoped DerivedData`)
 
     simctl(`install ${udid} "${appPath}"`)
     try { simctl(`terminate ${udid} ${BUNDLE_ID}`) } catch {}
