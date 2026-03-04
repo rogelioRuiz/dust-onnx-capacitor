@@ -126,8 +126,15 @@ console.log(`  Bundle:    ${BUNDLE_ID}`)
 console.log(`  Model:     ✓ ${MODEL_NAME} (${(fs.statSync(MODEL_PATH_LOCAL).size / 1e6).toFixed(1)} MB)`)
 console.log(`  Image:     ✓ ${IMAGE_NAME} (${(fs.statSync(IMAGE_PATH_LOCAL).size / 1e3).toFixed(0)} KB)`)
 
-// Copy assets to the simulator's app data container
-const dataContainer = sim(`get_app_container ${DEVICE_ID} ${BUNDLE_ID} data`)
+// Verify app is installed
+let dataContainer
+try {
+  dataContainer = sim(`get_app_container ${DEVICE_ID} ${BUNDLE_ID} data`)
+} catch (_) {
+  console.error(`\n  ✗ App not installed on simulator ${DEVICE_ID}`)
+  console.error(`  → Run 'npm run test:ios' first to build and install the app.\n`)
+  process.exit(1)
+}
 const docsDir       = path.join(dataContainer, 'Documents')
 fs.mkdirSync(docsDir, { recursive: true })
 

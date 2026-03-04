@@ -7,7 +7,11 @@
     "sync": "cap sync",
     "build:apk": "cd android && ./gradlew assembleDebug",
     "test:ios": "node test-e2e-ios.mjs",
-    "test:android": "node test-e2e-android.mjs"
+    "test:ios:verbose": "node test-e2e-ios.mjs --verbose",
+    "test:yolo-ios": "node test-e2e-yolo-ios.mjs",
+    "test:android": "node test-e2e-android.mjs",
+    "test:android:verbose": "node test-e2e-android.mjs --verbose",
+    "test:yolo-android": "node test-e2e-yolo-android.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.1.0",

@@ -62,13 +62,17 @@
   </tr>
 </table>
 
-**Run this demo in 3 commands:**
+**Run the full demo from a clean clone:**
 
 ```bash
-git clone https://github.com/rogelioRuiz/dust-onnx-capacitor && cd dust-onnx-capacitor/example
-npm install && npx cap sync
-npm run test:android   # or: npm run test:ios
+git clone https://github.com/rogelioRuiz/dust-onnx-capacitor
+cd dust-onnx-capacitor && npm install && npm run build
+cd example && npm install
+npm run test:ios        # API tests (20/20) — builds & installs app
+npm run test:yolo-ios   # YOLO inference — requires test:ios run first
 ```
+
+> Android: replace `test:ios` / `test:yolo-ios` with `test:android` / `test:yolo-android`
 
 Add `--verbose` for full build output (xcodebuild, gradlew, cap sync):
 
@@ -98,16 +102,9 @@ npx cap sync
 
 `dust-core-capacitor` is a required peer dependency — it provides the shared ML contract types (`DustModelServer`, `DustModelSession`, `DustCoreError`, etc.) that capacitor-onnx implements.
 
-### iOS (CocoaPods)
+### iOS (SPM)
 
-The iOS build uses CocoaPods for `onnxruntime-objc`. After `cap add ios`, update the Podfile:
-
-```ruby
-platform :ios, '16.0'
-use_frameworks! :linkage => :static
-```
-
-Then run `pod install` inside `ios/App/`.
+The iOS build resolves `onnxruntime-swift-package-manager` via Swift Package Manager automatically on first `cap sync`. No CocoaPods step required.
 
 ### Android
 
