@@ -66,9 +66,8 @@
 
 ```bash
 git clone https://github.com/rogelioRuiz/dust-onnx-capacitor
-cd dust-onnx-capacitor && npm install && npm run build
-cd example && npm install
-npm run test:ios        # API tests (20/20) — builds & installs app
+cd dust-onnx-capacitor && npm install
+npm run test:ios        # 22 tests (8 serve + 14 ONNX) — builds & installs app
 npm run test:yolo-ios   # YOLO inference — requires test:ios run first
 ```
 
@@ -451,9 +450,9 @@ capacitor-onnx/
 │       ├── ONNXRegistryTests.swift        # 9 O5 registry/session lifecycle tests
 │       └── ONNXPipelineTests.swift       # 7 O6 pipeline tests
 ├── example/                      # E2E test app
-│   ├── www/index.html            # Test runner UI (14 tests + YOLO demo)
-│   ├── test-e2e-android.mjs      # Android E2E runner (14 tests)
-│   ├── test-e2e-ios.mjs          # iOS E2E runner (14 tests)
+│   ├── www/index.html            # Test runner UI (22 tests + YOLO demo)
+│   ├── test-e2e-android.mjs      # Android E2E runner (22 tests)
+│   ├── test-e2e-ios.mjs          # iOS E2E runner (22 tests)
 │   ├── test-e2e-yolo-android.mjs # YOLO detection E2E (Android)
 │   ├── test-e2e-yolo-ios.mjs     # YOLO detection E2E (iOS)
 │   └── capacitor.config.json
@@ -549,30 +548,28 @@ xcodebuild test -scheme DustCapacitorOnnx \
   -skipPackagePluginValidation
 ```
 
-### E2E tests (14 plugin tests)
+### E2E tests (22 plugin tests)
 
-The E2E tests run 14 scenarios (8 O1 lifecycle + 6 O2 inference) on a real device/simulator with the actual ONNX Runtime. Both runners use an HTTP server on port 8099 to collect test results from the WebView.
+The E2E tests run 22 scenarios in two phases on a real device/simulator with the actual ONNX Runtime:
 
-The `run-float32` test verifies real inference: `input_a=[1,2,3] + input_b=[4,5,6]` produces `output=[5,7,9]`.
+- **Phase 1 — Serve lifecycle (S.1–S.8):** Register a tiny test model via dust-serve, download it from the test script's HTTP fixture server, verify events and status transitions, capture the serve-managed file path
+- **Phase 2 — ONNX API (O.1–O.14):** Load/unload/inference tests using the serve-managed path from Phase 1. Error tests (missing file, corrupt file) use direct paths to test ONNX error handling
 
-**Android** (physical device):
+Both runners use an HTTP server on port 8099 to collect test results and serve model fixtures. The `run-float32` test verifies real inference: `input_a=[1,2,3] + input_b=[4,5,6]` produces `output=[5,7,9]`.
+
+**Android** (device or emulator):
 
 ```bash
-ADB_PATH=/path/to/adb ANDROID_SERIAL=<device-id> node example/test-e2e-android.mjs
+npm run test:android
 ```
-
-The runner builds the APK, pushes fixtures to `/data/local/tmp/`, installs, and launches.
 
 **iOS** (simulator):
 
 ```bash
-# On macOS with booted simulator
-node example/test-e2e-ios.mjs
+npm run test:ios
 ```
 
-The runner runs `cap sync`, builds with xcodebuild, installs on the booted simulator, copies fixtures to the app's private tmp directory, and injects `test-config.json` into the installed bundle.
-
-**iOS fixture provisioning**: The app sandbox prevents accessing system `/tmp/`. The runner writes fixtures to the app's data container `tmp/` and injects a `test-config.json` into the installed bundle's `public/` directory (writable on simulator) so the WebView can `fetch()` it and discover the absolute path.
+The runners handle the full pipeline: `cap sync`, build, install, fixture provisioning, and result collection.
 
 ### Test results
 
@@ -580,97 +577,23 @@ The runner runs `cap sync`, builds with xcodebuild, installs on the booted simul
 |---|---|---|
 | Android unit tests | 51 (9 O1 + 9 O2 + 8 O3 + 9 O4 + 9 O5 + 7 O6) | PASS |
 | iOS unit tests | 51 (9 O1 + 9 O2 + 8 O3 + 9 O4 + 9 O5 + 7 O6) | PASS |
-| Android E2E | 14 (8 O1 + 6 O2) | PASS |
-| iOS E2E | 19 (5 setup + 14 plugin) | PASS |
+| Android E2E | 22 (8 serve + 14 ONNX) | PASS |
+| iOS E2E | 22 (8 serve + 14 ONNX) | PASS |
+| Android YOLO E2E | 5 detections via dust-serve | PASS |
+| iOS YOLO E2E | 5 detections via dust-serve | PASS |
 
-### Running manually (step by step)
+### YOLO E2E
 
-If you want full control instead of the one-command E2E scripts, follow these steps.
-
-#### 1. Clone and install
-
-```bash
-git clone https://github.com/rogelioRuiz/dust-onnx-capacitor.git
-cd dust-onnx-capacitor
-npm install && npm run build
-cd example && npm install
-```
-
-#### 2. Download an ONNX model
-
-The YOLO E2E scripts auto-download [yolo26s.onnx](https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx) (~37 MB). The plugin tests use a tiny Add fixture already included in `test/fixtures/`. To download the YOLO model yourself:
+The YOLO E2E tests run end-to-end object detection: the app registers and downloads [yolo26s.onnx](https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx) (~37 MB) through dust-serve, runs inference on a test image, and reports detections. The model is cached after the first download.
 
 ```bash
-mkdir -p test/models
-curl -L --progress-bar -o test/models/yolo26s.onnx \
-  https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx
-```
-
-#### 3a. iOS
-
-```bash
-# Add platform (skip if ios/ already exists)
-npx cap add ios
-npx cap sync ios
-
-# Build
-cd ios/App
-xcodebuild -scheme App -sdk iphonesimulator \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
-  -configuration Debug build
-cd ../..
-
-# Find the simulator UDID and install the app
-UDID=$(xcrun simctl list devices booted -j | python3 -c "
-import sys, json
-for devs in json.load(sys.stdin)['devices'].values():
-  for d in devs:
-    if d['state']=='Booted': print(d['udid']); break
-" 2>/dev/null | head -1)
-APP=$(find ~/Library/Developer/Xcode/DerivedData -name "App.app" \
-  -path "*Debug-iphonesimulator*" -not -path "*PlugIns*" | head -1)
-xcrun simctl install "$UDID" "$APP"
-
-# Copy the model into the app's data container
-DATA_DIR=$(xcrun simctl get_app_container "$UDID" io.t6x.onnx.test data)
-mkdir -p "$DATA_DIR/tmp"
-cp test/models/yolo26s.onnx "$DATA_DIR/tmp/"
-
-# Inject test-config.json so the app can discover the model path
-BUNDLE_DIR=$(xcrun simctl get_app_container "$UDID" io.t6x.onnx.test)
-echo "{\"fixturePath\":\"$DATA_DIR/tmp\"}" > "$BUNDLE_DIR/public/test-config.json"
-
-# Launch
-xcrun simctl launch "$UDID" io.t6x.onnx.test
-```
-
-> **Note:** iOS sandbox rules prevent the app from reading arbitrary paths. The model must be inside the app's data container, and `test-config.json` tells the WebView where to find it.
-
-#### 3b. Android
-
-```bash
-# Add platform (skip if android/ already exists)
-npx cap add android
-npx cap sync android
-
-# Push model and fixtures to device
-adb push test/models/yolo26s.onnx /data/local/tmp/
-adb push test/fixtures/tiny-test.onnx /data/local/tmp/
-
-# Build and install
-cd android && ./gradlew assembleDebug && cd ..
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
-
-# Port-forward for HTTP result collection (tests only)
-adb reverse tcp:8099 tcp:8099
-
-# Launch
-adb shell am start -n io.t6x.onnx.test/.MainActivity
+npm run test:yolo-ios       # requires test:ios run first (app must be installed)
+npm run test:yolo-android   # requires test:android run first
 ```
 
 #### Interactive YOLO demo
 
-The example app has a **Demo** tab where you can load a YOLO model, pick an image from the gallery or camera, and run object detection interactively. Enter the model path in the text field (e.g., `/data/local/tmp/yolo26s.onnx` on Android) and tap **Load Model**.
+The example app has a **Demo** tab where you can load a YOLO model via dust-serve, pick an image from the gallery or camera, and run object detection interactively.
 
 ### Using a different ONNX model
 
@@ -742,10 +665,6 @@ const result2 = await ONNX.runInference({
 | `graphOptLevel` | `'all'` | Graph optimization level. `'all'` applies all optimizations. Use `'disable'` for debugging. |
 | `memoryPattern` | `true` | Pre-allocate memory based on tensor shapes. Disable only if shapes vary wildly between runs. |
 
-#### 5. Deploy the model file
-
-Same as above — `adb push` for Android, `cp` into the app's data container for iOS.
-
 ### Caveats
 
 **Input tensor names and shapes must match exactly.** Unlike LLM inference where you just provide a prompt, ONNX models require tensors with specific names, shapes, and dtypes. Use `getModelMetadata()` after loading to discover what the model expects. Mismatches produce `shapeError` or `dtypeError` before inference runs.
@@ -762,7 +681,7 @@ Same as above — `adb push` for Android, `cp` into the app's data container for
 
 **ONNX Runtime version compatibility.** The plugin bundles ONNX Runtime 1.20. Models exported with newer opsets may use ops not yet supported. Stick to **opset 13–20** for best compatibility.
 
-**iOS sandbox: models must be in the app container.** Unlike Android where `/data/local/tmp/` is readable, iOS apps can only read files inside their own sandbox. Copy models into the app's data container (Documents or tmp) and use the absolute path from there.
+**iOS sandbox: models must be in the app container.** iOS apps can only read files inside their own sandbox. Use dust-serve to download models — it stores them in the app's data container automatically. If loading manually, the absolute path must point to a file inside the app's sandbox.
 
 **`cap sync` may regenerate patched files.** If you manually set the iOS deployment target to 16.0 or Android minSdk to 26, `cap sync` can overwrite those changes. Re-apply patches after syncing. The E2E test scripts handle this automatically, but manual runs require awareness.
 
