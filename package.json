@@ -1,6 +1,6 @@
 {
   "name": "dust-onnx-capacitor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Capacitor plugin for on-device ONNX Runtime model loading over .onnx files.",
   "main": "dist/esm/index.js",
   "types": "dist/esm/index.d.ts",
@@ -50,12 +50,14 @@
   "license": "Apache-2.0",
   "peerDependencies": {
     "@capacitor/core": "^7.0.0 || ^8.0.0",
-    "dust-core-capacitor": ">=0.1.0"
+    "dust-core-capacitor": ">=0.1.0",
+    "dust-serve-capacitor": ">=0.1.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
     "@capacitor/core": "^8.0.0",
     "dust-core-capacitor": "^0.1.0",
+    "dust-serve-capacitor": "^0.1.0",
     "typescript": "~5.7.0"
   },
   "engines": {

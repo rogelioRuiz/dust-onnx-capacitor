@@ -2,6 +2,7 @@ import Capacitor
 import Foundation
 import DustCore
 @_exported import DustOnnx
+import ServePlugin
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -24,7 +25,9 @@ public class ONNXPlugin: CAPPlugin, CAPBridgedPlugin {
 
     public override func load() {
         super.load()
-        DustCoreRegistry.shared.register(modelServer: sessionManager)
+        if let servePlugin = bridge?.plugin(withName: "Serve") as? ServePlugin {
+            servePlugin.setSessionFactory(sessionManager)
+        }
         #if canImport(UIKit)
         NotificationCenter.default.addObserver(
             self,
