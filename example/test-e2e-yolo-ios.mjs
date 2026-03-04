@@ -28,7 +28,23 @@ const MODEL_NAME     = 'yolo26s.onnx'
 const MODEL_URL      = 'https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx'
 const IMAGE_NAME     = 'test_yolo.jpg'
 const MIN_DETECTIONS = 1
-const DEVICE_ID      = process.env.IOS_DEVICE_ID || 'booted'
+const DEVICE_ID      = process.env.IOS_DEVICE_ID || (() => {
+  try {
+    const json = execSync('xcrun simctl list devices booted -j', { encoding: 'utf8' })
+    const data = JSON.parse(json)
+    for (const devices of Object.values(data.devices)) {
+      for (const d of devices) {
+        if (d.state === 'Booted') {
+          try {
+            execSync(`xcrun simctl get_app_container ${d.udid} ${BUNDLE_ID} data`, { encoding: 'utf8' })
+            return d.udid
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+  return 'booted'
+})()
 
 const MODEL_DIR        = path.join(ROOT_DIR, 'test', 'models')
 const MODEL_PATH_LOCAL = path.join(MODEL_DIR, MODEL_NAME)
