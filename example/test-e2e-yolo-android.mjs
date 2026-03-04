@@ -3,10 +3,10 @@
  * YOLO Object Detection E2E Test — Android
  *
  * Protocol:
- *   1. This script pushes model + image to the device, then starts an HTTP server on :8098
+ *   1. This script starts an HTTP server on :8098, serves the test image
  *   2. adb reverse forwards device port 8098 → host 8098
- *   3. The app's bootYoloE2E() polls GET /__yolo_task to receive {modelPath, imageUrl}
- *   4. App runs loadModel → preprocessImage → runInference, then POSTs results to /__yolo_result
+ *   3. The app's bootYoloE2E() polls GET /__yolo_task to receive {imageUrl}
+ *   4. App downloads YOLO model via dust-serve, runs inference, POSTs results
  *   5. Script takes a screenshot, prints a report, and exits 0 (pass) / 1 (fail)
  */
 
@@ -18,40 +18,19 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
-const ROOT_DIR = path.resolve(__dirname, '..')
-const VERBOSE = process.argv.includes('--verbose')
-
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BUNDLE_ID      = 'io.t6x.onnx.test'
 const RUNNER_PORT    = 8098
-const TIMEOUT_MS     = 180_000
-const MODEL_NAME     = 'yolo26s.onnx'
-const MODEL_URL      = 'https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx'
+const TIMEOUT_MS     = 300_000   // allow time for first-run model download (~38 MB)
 const IMAGE_NAME     = 'test_yolo.jpg'
 const MIN_DETECTIONS = 1
 const ADB            = process.env.ADB_PATH || 'adb'
 const DEVICE_SERIAL  = process.env.ANDROID_SERIAL || ''
 
-// Local paths — model is cached in test/models/, image is in example/
-const MODEL_DIR        = path.join(ROOT_DIR, 'test', 'models')
-const MODEL_PATH_LOCAL = path.join(MODEL_DIR, MODEL_NAME)
 const IMAGE_PATH_LOCAL = path.join(__dirname, IMAGE_NAME)
 
-// Device paths
-const DEVICE_MODEL_PATH = '/data/local/tmp/' + MODEL_NAME
 const SCREENSHOT_DEVICE = '/sdcard/yolo-e2e-result.png'
 const SCREENSHOT_LOCAL  = path.join(__dirname, 'yolo-e2e-android.png')
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function ensureModel() {
-  if (fs.existsSync(MODEL_PATH_LOCAL)) return
-  console.log(`  → Downloading model (${MODEL_NAME}, ~37 MB)...`)
-  fs.mkdirSync(MODEL_DIR, { recursive: true })
-  execSync(`curl -L --progress-bar -o "${MODEL_PATH_LOCAL}" "${MODEL_URL}"`, {
-    stdio: ['ignore', process.stderr, 'pipe'],
-    timeout: 300_000,
-  })
-}
 
 function adb(args, opts = {}) {
   const serial = DEVICE_SERIAL ? `-s ${DEVICE_SERIAL}` : ''
@@ -123,34 +102,20 @@ if (!DEVICE_SERIAL) process.env.ANDROID_SERIAL = device
 console.log(`  Device:    ${device}`)
 console.log(`  Bundle:    ${BUNDLE_ID}`)
 
-// Download model if needed
-ensureModel()
-
-// Verify local assets
-if (!fs.existsSync(MODEL_PATH_LOCAL)) {
-  console.error(`\n  ✗ Model not found after download: ${MODEL_PATH_LOCAL}`)
-  process.exit(1)
-}
 if (!fs.existsSync(IMAGE_PATH_LOCAL)) {
   console.error(`\n  ✗ Test image not found: ${IMAGE_PATH_LOCAL}`)
   process.exit(1)
 }
-console.log(`  Model:     ✓ ${MODEL_NAME} (${(fs.statSync(MODEL_PATH_LOCAL).size / 1e6).toFixed(1)} MB)`)
-console.log(`  Image:     ✓ ${IMAGE_NAME} (${(fs.statSync(IMAGE_PATH_LOCAL).size / 1e3).toFixed(0)} KB)\n`)
-
-// Push model to device (image is served by HTTP server, not pushed)
-console.log('  Pushing model to device...')
-adb(`push "${MODEL_PATH_LOCAL}" ${DEVICE_MODEL_PATH}`)
-console.log(`  Model:     → ${DEVICE_MODEL_PATH}`)
+console.log(`  Image:     ✓ ${IMAGE_NAME} (${(fs.statSync(IMAGE_PATH_LOCAL).size / 1e3).toFixed(0)} KB)`)
+console.log(`  Model:     downloaded by app via dust-serve\n`)
 
 // adb reverse so device can reach our HTTP server
 adb(`reverse tcp:${RUNNER_PORT} tcp:${RUNNER_PORT}`)
 console.log(`  Reverse:   tcp:${RUNNER_PORT} → tcp:${RUNNER_PORT}\n`)
 
-// Task descriptor — image served directly by this script
+// Task descriptor — image served directly by this script, model downloaded by app via serve
 const task = {
-  modelPath: DEVICE_MODEL_PATH,
-  imageUrl:  `http://127.0.0.1:${RUNNER_PORT}/__yolo_image`
+  imageUrl: `http://127.0.0.1:${RUNNER_PORT}/__yolo_image`
 }
 
 const imageBuffer = fs.readFileSync(IMAGE_PATH_LOCAL)

@@ -345,9 +345,6 @@
     window.Capacitor.registerPlugin('Serve')
   }
   var DEMO_MODE = true
-  var SERVE_TEST_MODE = false
-  var SKIP_DOWNLOAD = false
-  var MODEL_PATH = ''
   var RUNNER_URL = 'http://127.0.0.1:8099'
   var YOLO_CONF_THRESHOLD = 0.25
   var YOLO_NMS_IOU_THRESHOLD = 0.45
@@ -360,6 +357,15 @@
     url: 'https://github.com/rogelioRuiz/dust-onnx-capacitor/releases/download/test-assets/yolo26s.onnx',
     sizeBytes: 38291057,
     sha256: 'b62eded258445be46fd869e957eb5fba50920d77d7957ccefdf47cf14e691bd5',
+    version: '1'
+  }
+  var TINY_TEST_DESCRIPTOR = {
+    id: 'tiny-test',
+    name: 'tiny-test',
+    format: 'onnx',
+    url: '',
+    sizeBytes: 150,
+    sha256: 'a1d16e7aa9b7d38bacf7593c3eaca2ded949756c1f7360b9d435cb348dff9d1a',
     version: '1'
   }
 
@@ -497,34 +503,9 @@
     document.getElementById('tab-test').addEventListener('click', function () { switchMode(false) })
     switchMode(true)
 
-    if (SERVE_TEST_MODE) {
-      // Run serve tests directly — don't go through bootDemo()
-      ;(async function () {
-        try {
-          // Wait for Capacitor bridge to be ready
-          for (var attempt = 0; attempt < 100; attempt++) {
-            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX && window.Capacitor.Plugins.Serve) break
-            await new Promise(function (r) { setTimeout(r, 200) })
-          }
-          state.ONNX = window.Capacitor && window.Capacitor.Plugins ? (window.Capacitor.Plugins.ONNX || null) : null
-          state.Serve = window.Capacitor && window.Capacitor.Plugins ? (window.Capacitor.Plugins.Serve || null) : null
-          await runServeTests()
-        } catch (e) {
-          try {
-            await fetch(RUNNER_URL + '/__serve_done', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ passed: 0, failed: 1, total: 1, fatal: e.message || String(e) }),
-              keepalive: true
-            })
-          } catch (_) {}
-        }
-      })()
-    } else {
-      bootDemo()
-      bootTestRunner()
-      bootYoloE2E()
-    }
+    bootDemo()
+    bootTestRunner()
+    bootYoloE2E()
 
     // ════════════════════════════════════════════════
     // DEMO MODE
@@ -534,7 +515,7 @@
         modelId: null,
         modelLoading: false,
         modelReady: false,
-        modelPath: MODEL_PATH || '',
+        modelPath: '',
         downloading: false,
         downloadProgress: 0,
         downloadedBytes: 0,
@@ -634,25 +615,6 @@
         }
       }
 
-      await applyBootConfig()
-
-      if (SERVE_TEST_MODE) {
-        setDemoStatus('running', 'Running serve tests...')
-        await runServeTests()
-        return
-      }
-
-      if (SKIP_DOWNLOAD && MODEL_PATH) {
-        try {
-          await loadYoloFromPath(MODEL_PATH)
-          return
-        } catch (e) {
-          setDemoStatus('error', 'Load failed: ' + (e.message || e.code || e))
-          setLoadButton('load')
-          return
-        }
-      }
-
       if (!state.Serve) {
         setDemoStatus('error', 'Serve plugin not found')
         els.btnLoad.disabled = true
@@ -708,17 +670,6 @@
         els.downloadCard.classList.add('hidden')
         els.workspace.classList.remove('hidden')
         els.footer.classList.remove('hidden')
-      }
-
-      async function applyBootConfig() {
-        if (!window.Capacitor || window.Capacitor.getPlatform() !== 'ios') return
-        try {
-          var cfg = await fetch('test-config.json').then(function (r) { return r.json() })
-          if (cfg && cfg.basePath && !MODEL_PATH) MODEL_PATH = cfg.basePath + '/yolo26s.onnx'
-          if (cfg && cfg.modelPath) MODEL_PATH = cfg.modelPath
-          if (cfg && typeof cfg.skipDownload === 'boolean') SKIP_DOWNLOAD = cfg.skipDownload
-          if (MODEL_PATH) demoState.modelPath = MODEL_PATH
-        } catch (_) {}
       }
 
       async function checkYoloModelReady() {
@@ -829,11 +780,7 @@
         setLoadButton('loading')
         setDemoStatus('loading', 'Loading model...')
         try {
-          if (SKIP_DOWNLOAD && MODEL_PATH) {
-            await loadYoloFromPath(MODEL_PATH)
-          } else {
-            await downloadAndLoad()
-          }
+          await downloadAndLoad()
         } catch (e) {
           setDemoStatus('error', 'Load failed: ' + (e.message || e.code || e))
         } finally {
@@ -1104,162 +1051,9 @@
     } // end bootDemo
 
     // ════════════════════════════════════════════════
-    // SERVE TEST MODE
-    // ════════════════════════════════════════════════
-    async function runServeTests() {
-      var passed = 0
-      var failed = 0
-      var total = 0
-
-      function assert(value, message) {
-        if (!value) throw new Error(message)
-      }
-
-      async function post(path, payload) {
-        try {
-          await fetch(RUNNER_URL + path, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-            keepalive: true
-          })
-        } catch (_) {}
-      }
-
-      async function postResult(id, status, detail, error) {
-        await post('/__serve_result', { id: id, status: status, detail: detail, error: error })
-      }
-
-      async function postDone(fatal) {
-        await post('/__serve_done', { passed: passed, failed: failed, total: total, fatal: fatal || null })
-      }
-
-      async function t(id, fn, timeoutMs) {
-        total++
-        var startedAt = Date.now()
-        var limit = timeoutMs || 30000
-        try {
-          await Promise.race([
-            fn(),
-            new Promise(function (_resolve, reject) {
-              setTimeout(function () { reject(new Error('Timed out after ' + limit + 'ms')) }, limit)
-            })
-          ])
-          passed++
-          await postResult(id, 'pass', (Date.now() - startedAt) + 'ms')
-        } catch (error) {
-          failed++
-          await postResult(id, 'fail', null, (error && error.message ? error.message : String(error)).split('\n')[0])
-        }
-      }
-
-      try {
-        assert(state.Serve, 'Serve plugin must be registered')
-        assert(state.ONNX, 'ONNX plugin must be registered')
-
-        var testModelId = YOLO_MODEL_ID + '-serve-test'
-        var descriptor = cloneDescriptor(YOLO_DESCRIPTOR)
-        descriptor.id = testModelId
-        descriptor.version = 'serve-test-' + Date.now()
-
-        var sizeEvent = null
-        var progressEvent = null
-        var readyEvent = null
-        var servePath = ''
-
-        await t('S.1 registerModel() succeeds', async function () {
-          await state.Serve.registerModel({ descriptor: descriptor })
-        })
-
-        await t('S.2 listModels() returns descriptor + status', async function () {
-          var result = await state.Serve.listModels()
-          assert(result && Array.isArray(result.models), 'listModels() must return models[]')
-          var found = result.models.some(function (model) {
-            return model && model.descriptor && model.descriptor.id === testModelId && model.status
-          })
-          assert(found, 'listModels() must include ' + testModelId)
-        })
-
-        await t('S.3 getModelStatus() returns status.kind', async function () {
-          var result = await state.Serve.getModelStatus({ modelId: testModelId })
-          assert(result && result.status && typeof result.status.kind === 'string', 'status.kind must be a string')
-        })
-
-        await t('S.4 downloadModel() starts and completes', async function () {
-          servePath = await downloadServeModel({
-            modelId: testModelId,
-            descriptor: descriptor,
-            onSizeDisclosure: function (event) {
-              sizeEvent = event
-            },
-            onProgress: function (event) {
-              if (!progressEvent) progressEvent = event
-            },
-            onReady: function (event) {
-              readyEvent = event
-            }
-          })
-          assert(servePath, 'modelReady event must include a path')
-        }, 240000)
-
-        await t('S.5 sizeDisclosure emits modelId + sizeBytes', async function () {
-          assert(sizeEvent, 'sizeDisclosure event missing')
-          assert(sizeEvent.modelId === testModelId, 'sizeDisclosure modelId mismatch')
-          assert(sizeEvent.sizeBytes > 0, 'sizeDisclosure sizeBytes must be > 0')
-        })
-
-        await t('S.6 modelProgress emits download counters', async function () {
-          assert(progressEvent, 'modelProgress event missing')
-          assert(progressEvent.modelId === testModelId, 'modelProgress modelId mismatch')
-          assert(typeof progressEvent.bytesDownloaded === 'number', 'bytesDownloaded must be numeric')
-          var disclosedTotal = progressEvent.totalBytes || (sizeEvent && sizeEvent.sizeBytes) || 0
-          assert(disclosedTotal > 0, 'totalBytes must be > 0')
-        })
-
-        await t('S.7 modelReady emits modelId + path', async function () {
-          assert(readyEvent, 'modelReady event missing')
-          assert(readyEvent.modelId === testModelId, 'modelReady modelId mismatch')
-          assert(readyEvent.path, 'modelReady path must be set')
-        })
-
-        await t('S.8 getModelStatus() after ready returns path', async function () {
-          var result = await state.Serve.getModelStatus({ modelId: testModelId })
-          assert(result && result.status && result.status.kind === 'ready', 'status.kind must be ready')
-          assert(result.status.path, 'status.path must be set once ready')
-          servePath = result.status.path
-        })
-
-        await t('S.9 ONNX.loadModel() succeeds from serve path', async function () {
-          var result = await state.ONNX.loadModel({
-            descriptor: { id: 'yolo-serve-test', format: 'onnx', url: servePath },
-            config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
-          })
-          assert(result && result.modelId === 'yolo-serve-test', 'Unexpected modelId from ONNX.loadModel()')
-          await state.ONNX.unloadModel({ modelId: result.modelId })
-        }, 60000)
-
-        await t('S.10 registerModel() restores ready + path', async function () {
-          await state.Serve.registerModel({ descriptor: descriptor })
-          var result = await state.Serve.getModelStatus({ modelId: testModelId })
-          assert(result && result.status && result.status.kind === 'ready', 'registerModel() must preserve ready state')
-          assert(result.status.path, 'registerModel() must restore the cached path')
-        })
-
-        await postDone()
-      } catch (error) {
-        failed++
-        total++
-        await postResult('FATAL', 'fail', null, error && error.message ? error.message : String(error))
-        await postDone(error && error.message ? error.message : String(error))
-      }
-    }
-
-    // ════════════════════════════════════════════════
-    // TEST MODE  (original runner, logic unchanged)
+    // TEST MODE — unified serve lifecycle + ONNX API
     // ════════════════════════════════════════════════
     async function bootTestRunner() {
-      if (SERVE_TEST_MODE) return
-
       function setStatus(msg) { document.getElementById('status').textContent = msg }
 
       function render(name, status, detail) {
@@ -1313,78 +1107,163 @@
 
       // Wait for bridge
       var testONNX = null
+      var testServe = null
       for (var i = 0; i < 50; i++) {
         testONNX = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX
-        if (testONNX) break
+        testServe = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Serve
+        if (testONNX && testServe) break
         await new Promise(function (r) { setTimeout(r, 200) })
       }
       if (!testONNX) { setStatus('ONNX plugin not found'); return }
+      if (!testServe) { setStatus('Serve plugin not found'); return }
 
-      // Platform-aware model paths
+      // Read test config (fixture URL for serve download, basePath for error tests)
       var platform = window.Capacitor.getPlatform()
-      var base = '/data/local/tmp'
+      var fixtureBaseUrl = ''
+      var errorBasePath = '/data/local/tmp'
       if (platform === 'ios') {
         try {
           var resp = await fetch('test-config.json')
           var cfg = await resp.json()
-          base = cfg.basePath
+          if (cfg.fixtureBaseUrl) fixtureBaseUrl = cfg.fixtureBaseUrl
+          if (cfg.basePath) errorBasePath = cfg.basePath
         } catch (_) {
-          base = '/tmp'
+          errorBasePath = '/tmp'
         }
+      } else {
+        fixtureBaseUrl = 'http://127.0.0.1:' + RUNNER_URL.split(':').pop() + '/__fixture'
       }
-      var VALID_PATH   = base + '/tiny-test.onnx'
-      var CORRUPT_PATH = base + '/corrupt-test.onnx'
-      var MISSING_PATH = base + '/does-not-exist.onnx'
+
+      var CORRUPT_PATH = errorBasePath + '/corrupt-test.onnx'
+      var MISSING_PATH = errorBasePath + '/does-not-exist.onnx'
 
       setStatus('Running tests (' + platform + ')...')
 
       var passed = 0, failed = 0, total = 0
 
-      async function test(id, fn) {
+      async function test(id, fn, timeoutMs) {
         total++
-        try { await fn(); passed++; await report(id, 'pass', 'ok') }
-        catch (e) { failed++; await report(id, 'fail', null, e.message || String(e)) }
+        var limit = timeoutMs || 30000
+        try {
+          await Promise.race([
+            (async function () { await fn(); passed++; await report(id, 'pass', 'ok') })(),
+            new Promise(function (_resolve, reject) {
+              setTimeout(function () { reject(new Error('Timed out after ' + limit + 'ms')) }, limit)
+            })
+          ])
+        } catch (e) {
+          failed++
+          await report(id, 'fail', null, e.message || String(e))
+        }
       }
 
-      await test('load-valid', async function () {
-        var r = await testONNX.loadModel({ descriptor: { id: 'tiny-test', format: 'onnx', url: VALID_PATH } })
-        assert(r.modelId === 'tiny-test', 'Unexpected modelId: ' + r.modelId)
+      // ── Phase 1: Serve lifecycle (S.1–S.8) ───────
+      var tinyDescriptor = cloneDescriptor(TINY_TEST_DESCRIPTOR)
+      tinyDescriptor.url = fixtureBaseUrl + '/tiny-test.onnx'
+      tinyDescriptor.version = 'test-' + Date.now()
+
+      var sizeEvent = null
+      var progressEvent = null
+      var readyEvent = null
+      var servePath = ''
+
+      await test('S.1-register', async function () {
+        await testServe.registerModel({ descriptor: tinyDescriptor })
+      })
+
+      await test('S.2-list', async function () {
+        var result = await testServe.listModels()
+        assert(result && Array.isArray(result.models), 'listModels() must return models[]')
+        var found = result.models.some(function (model) {
+          return model && model.descriptor && model.descriptor.id === tinyDescriptor.id && model.status
+        })
+        assert(found, 'listModels() must include ' + tinyDescriptor.id)
+      })
+
+      await test('S.3-status', async function () {
+        var result = await testServe.getModelStatus({ modelId: tinyDescriptor.id })
+        assert(result && result.status && typeof result.status.kind === 'string', 'status.kind must be a string')
+      })
+
+      await test('S.4-download', async function () {
+        servePath = await downloadServeModel({
+          modelId: tinyDescriptor.id,
+          descriptor: tinyDescriptor,
+          onSizeDisclosure: function (event) { sizeEvent = event },
+          onProgress: function (event) { if (!progressEvent) progressEvent = event },
+          onReady: function (event) { readyEvent = event }
+        })
+        assert(servePath, 'modelReady event must include a path')
+      }, 60000)
+
+      await test('S.5-sizeDisclosure', async function () {
+        assert(sizeEvent, 'sizeDisclosure event missing')
+        assert(sizeEvent.modelId === tinyDescriptor.id, 'sizeDisclosure modelId mismatch')
+        assert(sizeEvent.sizeBytes > 0, 'sizeDisclosure sizeBytes must be > 0')
+      })
+
+      await test('S.6-progress', async function () {
+        assert(progressEvent, 'modelProgress event missing')
+        assert(progressEvent.modelId === tinyDescriptor.id, 'modelProgress modelId mismatch')
+        assert(typeof progressEvent.bytesDownloaded === 'number', 'bytesDownloaded must be numeric')
+      })
+
+      await test('S.7-ready', async function () {
+        assert(readyEvent, 'modelReady event missing')
+        assert(readyEvent.modelId === tinyDescriptor.id, 'modelReady modelId mismatch')
+        assert(readyEvent.path, 'modelReady path must be set')
+      })
+
+      await test('S.8-readyStatus', async function () {
+        var result = await testServe.getModelStatus({ modelId: tinyDescriptor.id })
+        assert(result && result.status && result.status.kind === 'ready', 'status.kind must be ready')
+        assert(result.status.path, 'status.path must be set once ready')
+        servePath = result.status.path
+      })
+
+      // ── Phase 2: ONNX API (O.1–O.14) ─────────────
+      // Happy-path tests use servePath from Phase 1
+      var VALID_PATH = servePath
+
+      await test('O.1-load-valid', async function () {
+        var r = await testONNX.loadModel({ descriptor: { id: 'tiny-test-onnx', format: 'onnx', url: VALID_PATH } })
+        assert(r.modelId === 'tiny-test-onnx', 'Unexpected modelId: ' + r.modelId)
         assert(Array.isArray(r.metadata.inputs), 'Missing inputs metadata')
         assert(Array.isArray(r.metadata.outputs), 'Missing outputs metadata')
       })
 
-      await test('load-missing', async function () {
+      await test('O.2-load-missing', async function () {
         await expectReject(function () {
           return testONNX.loadModel({ descriptor: { id: 'missing', format: 'onnx', url: MISSING_PATH } })
         }, 'inferenceFailed')
       })
 
-      await test('load-corrupt', async function () {
+      await test('O.3-load-corrupt', async function () {
         await expectReject(function () {
           return testONNX.loadModel({ descriptor: { id: 'corrupt', format: 'onnx', url: CORRUPT_PATH } })
         }, 'inferenceFailed')
       })
 
-      await test('wrong-format', async function () {
+      await test('O.4-wrong-format', async function () {
         await expectReject(function () {
           return testONNX.loadModel({ descriptor: { id: 'wrong-fmt', format: 'gguf', url: VALID_PATH } })
         }, 'formatUnsupported')
       })
 
-      await test('unload-clears-cache', async function () {
-        await testONNX.unloadModel({ modelId: 'tiny-test' })
+      await test('O.5-unload-clears', async function () {
+        await testONNX.unloadModel({ modelId: 'tiny-test-onnx' })
         var listed = await testONNX.listLoadedModels()
         assert(Array.isArray(listed.modelIds), 'modelIds must be array')
         assert(listed.modelIds.length === 0, 'Expected 0 models, got ' + listed.modelIds.length)
       })
 
-      await test('unload-unknown', async function () {
+      await test('O.6-unload-unknown', async function () {
         await expectReject(function () {
           return testONNX.unloadModel({ modelId: 'missing-model' })
         }, 'modelNotFound')
       })
 
-      await test('load-same-model-twice', async function () {
+      await test('O.7-load-twice', async function () {
         await testONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
         await testONNX.loadModel({ descriptor: { id: 'same-model', format: 'onnx', url: VALID_PATH } })
         var listed = await testONNX.listLoadedModels()
@@ -1392,7 +1271,7 @@
         await testONNX.unloadModel({ modelId: 'same-model' })
       })
 
-      await test('load-two-models', async function () {
+      await test('O.8-load-two', async function () {
         await testONNX.loadModel({ descriptor: { id: 'model-a', format: 'onnx', url: VALID_PATH } })
         await testONNX.loadModel({ descriptor: { id: 'model-b', format: 'onnx', url: VALID_PATH } })
         var listed = await testONNX.listLoadedModels()
@@ -1400,7 +1279,7 @@
         assert(listed.modelIds.includes('model-b'), 'model-b missing')
       })
 
-      await test('run-float32', async function () {
+      await test('O.9-inference', async function () {
         await testONNX.loadModel({ descriptor: { id: 'infer-model', format: 'onnx', url: VALID_PATH } })
         var result = await testONNX.runInference({
           modelId: 'infer-model',
@@ -1416,7 +1295,7 @@
         assert(sameArray(result.outputs[0].data, [5, 7, 9]), 'Unexpected output data: ' + JSON.stringify(result.outputs[0].data))
       })
 
-      await test('shape-mismatch-rank', async function () {
+      await test('O.10-shape-rank', async function () {
         await expectReject(function () {
           return testONNX.runInference({
             modelId: 'infer-model',
@@ -1428,7 +1307,7 @@
         }, 'shapeError')
       })
 
-      await test('shape-mismatch-dim', async function () {
+      await test('O.11-shape-dim', async function () {
         await expectReject(function () {
           return testONNX.runInference({
             modelId: 'infer-model',
@@ -1440,7 +1319,7 @@
         }, 'shapeError')
       })
 
-      await test('dtype-mismatch', async function () {
+      await test('O.12-dtype', async function () {
         await expectReject(function () {
           return testONNX.runInference({
             modelId: 'infer-model',
@@ -1452,7 +1331,7 @@
         }, 'dtypeError')
       })
 
-      await test('output-filter', async function () {
+      await test('O.13-output-filter', async function () {
         var result = await testONNX.runInference({
           modelId: 'infer-model',
           inputs: [
@@ -1465,7 +1344,7 @@
         assert(result.outputs[0].name === 'output', 'Unexpected output name: ' + result.outputs[0].name)
       })
 
-      await test('inference-unloaded', async function () {
+      await test('O.14-inference-unloaded', async function () {
         await testONNX.unloadModel({ modelId: 'infer-model' })
         await expectReject(function () {
           return testONNX.runInference({
@@ -1513,11 +1392,33 @@
       var onnx = await waitForBridge()
       if (!onnx) { await postResult({ error: 'plugin not found' }); return }
 
-      // Load model
+      // Ensure Serve plugin is available
+      var serve = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Serve
+      if (!serve) { await postResult({ error: 'Serve plugin not found' }); return }
+      state.Serve = serve
+
+      // Download YOLO model through dust-serve
+      var modelPath
+      try {
+        await serve.registerModel({ descriptor: YOLO_DESCRIPTOR })
+        var status = await getServeModelStatus(YOLO_MODEL_ID)
+        if (status && status.status && status.status.kind === 'ready' && status.status.path) {
+          modelPath = status.status.path
+        } else {
+          modelPath = await downloadServeModel({
+            modelId: YOLO_MODEL_ID,
+            descriptor: YOLO_DESCRIPTOR
+          })
+        }
+      } catch (e) {
+        await postResult({ error: 'serve download failed: ' + (e.message || e.code) }); return
+      }
+
+      // Load model from serve-managed path
       var modelResult
       try {
         modelResult = await onnx.loadModel({
-          descriptor: { id: 'yolo-e2e', format: 'onnx', url: task.modelPath },
+          descriptor: { id: 'yolo-e2e', format: 'onnx', url: modelPath },
           config: { accelerator: 'auto', graphOptLevel: 'all', memoryPattern: true }
         })
       } catch (e) {
@@ -1547,7 +1448,7 @@
         await postResult({ error: 'image fetch failed: ' + e.message }); return
       }
 
-      // Preprocess — always request 640×640 output (letterbox handles aspect ratio)
+      // Preprocess — always request 640x640 output (letterbox handles aspect ratio)
       var tensor
       try {
         var pp = await onnx.preprocessImage({
@@ -1559,7 +1460,7 @@
         await postResult({ error: 'preprocess failed: ' + (e.message || e.code) }); return
       }
 
-      // Inference — always use 640×640 shape (preprocessImage may report original size)
+      // Inference — always use 640x640 shape (preprocessImage may report original size)
       var t0 = Date.now()
       var inferResult
       try {
@@ -1596,7 +1497,7 @@
       try {
         switchMode(true)   // switch to DEMO tab
         if (typeof window.__yoloDemoVisual === 'function') {
-          window.__yoloDemoVisual(imgObjUrl, imgW, imgH, dets, inferMs, task.modelPath.split('/').pop())
+          window.__yoloDemoVisual(imgObjUrl, imgW, imgH, dets, inferMs, 'yolo26s.onnx')
         }
       } catch (_) {}
 

@@ -2,8 +2,8 @@
 /**
  * capacitor-onnx Android E2E Test Suite
  *
- * Runs the 14-test in-app suite on an Android device/emulator
- * via HTTP result collection.
+ * Runs the 22-test in-app suite (8 serve lifecycle + 14 ONNX API)
+ * on an Android device/emulator via HTTP result collection.
  *
  * Auto-setup: cap add android, gradle patches, cap sync, build,
  * fixture push, emulator auto-start.
@@ -27,7 +27,7 @@ const VERBOSE = process.argv.includes('--verbose')
 // ─── Config ──────────────────────────────────────────────────────────────────
 const BUNDLE_ID = 'io.t6x.onnx.test'
 const RUNNER_PORT = 8099
-const TOTAL_TESTS = 14
+const TOTAL_TESTS = 22
 const TIMEOUT_MS = 120_000
 const ADB = findAdbBinary()
 const FIXTURE_PATH = path.join(__dirname, '..', 'test', 'fixtures', 'tiny-test.onnx')
@@ -191,7 +191,9 @@ function patchAndroidManifest() {
   fs.writeFileSync(manifest, content)
 }
 
-// ─── HTTP result collector ──────────────────────────────────────────────────
+// ─── HTTP result collector + fixture server ─────────────────────────────────
+const FIXTURES_DIR = path.join(__dirname, '..', 'test', 'fixtures')
+
 function startResultServer() {
   const received = new Map()
 
@@ -199,12 +201,30 @@ function startResultServer() {
     const allDonePromise = new Promise((resolveDone, rejectDone) => {
       const server = http.createServer((req, res) => {
         res.setHeader('Access-Control-Allow-Origin', '*')
-        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
         if (req.method === 'OPTIONS') {
           res.writeHead(204)
           res.end()
+          return
+        }
+
+        // Serve fixture files for dust-serve to download
+        if (req.method === 'GET' && req.url.startsWith('/__fixture/')) {
+          const fileName = req.url.slice('/__fixture/'.length)
+          const filePath = path.join(FIXTURES_DIR, fileName)
+          try {
+            const data = fs.readFileSync(filePath)
+            res.writeHead(200, {
+              'Content-Type': 'application/octet-stream',
+              'Content-Length': data.length,
+            })
+            res.end(data)
+          } catch (_) {
+            res.writeHead(404)
+            res.end('not found')
+          }
           return
         }
 
@@ -252,20 +272,30 @@ function startResultServer() {
 
 // ─── Test name map ──────────────────────────────────────────────────────────
 const TEST_NAMES = {
-  'load-valid': 'loadModel() — valid ONNX file returns metadata',
-  'load-missing': 'loadModel() — missing file rejects inferenceFailed',
-  'load-corrupt': 'loadModel() — corrupt file rejects inferenceFailed',
-  'wrong-format': 'loadModel() — wrong format rejects formatUnsupported',
-  'unload-clears-cache': 'unloadModel() — clears session cache',
-  'unload-unknown': 'unloadModel() — unknown ID rejects modelNotFound',
-  'load-same-model-twice': 'loadModel() — same ID twice stores once',
-  'load-two-models': 'loadModel() — two IDs both present',
-  'run-float32': 'runInference() — float32 inputs produce [5, 7, 9]',
-  'shape-mismatch-rank': 'runInference() — wrong rank rejects shapeError',
-  'shape-mismatch-dim': 'runInference() — wrong static dim rejects shapeError',
-  'dtype-mismatch': 'runInference() — wrong dtype rejects dtypeError',
-  'output-filter': 'runInference() — outputNames filters outputs',
-  'inference-unloaded': 'runInference() — unloaded model rejects modelNotFound',
+  // Phase 1: Serve lifecycle
+  'S.1-register': 'registerModel() — succeeds',
+  'S.2-list': 'listModels() — returns descriptor + status',
+  'S.3-status': 'getModelStatus() — returns status.kind',
+  'S.4-download': 'downloadModel() — starts and completes',
+  'S.5-sizeDisclosure': 'sizeDisclosure — emits modelId + sizeBytes',
+  'S.6-progress': 'modelProgress — emits download counters',
+  'S.7-ready': 'modelReady — emits modelId + path',
+  'S.8-readyStatus': 'getModelStatus() — after ready returns path',
+  // Phase 2: ONNX API
+  'O.1-load-valid': 'loadModel() — valid ONNX file returns metadata',
+  'O.2-load-missing': 'loadModel() — missing file rejects inferenceFailed',
+  'O.3-load-corrupt': 'loadModel() — corrupt file rejects inferenceFailed',
+  'O.4-wrong-format': 'loadModel() — wrong format rejects formatUnsupported',
+  'O.5-unload-clears': 'unloadModel() — clears session cache',
+  'O.6-unload-unknown': 'unloadModel() — unknown ID rejects modelNotFound',
+  'O.7-load-twice': 'loadModel() — same ID twice stores once',
+  'O.8-load-two': 'loadModel() — two IDs both present',
+  'O.9-inference': 'runInference() — float32 inputs produce [5, 7, 9]',
+  'O.10-shape-rank': 'runInference() — wrong rank rejects shapeError',
+  'O.11-shape-dim': 'runInference() — wrong static dim rejects shapeError',
+  'O.12-dtype': 'runInference() — wrong dtype rejects dtypeError',
+  'O.13-output-filter': 'runInference() — outputNames filters outputs',
+  'O.14-inference-unloaded': 'runInference() — unloaded model rejects modelNotFound',
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -369,14 +399,16 @@ async function main() {
     process.exit(1)
   }
 
-  // ─── Section 3: Plugin API Results ────────────────────────────────────
-  logSection('3 — Plugin API Results')
+  // ─── Section 3: App Test Results ────────────────────────────────────────
+  logSection('3 — Serve Lifecycle + ONNX API Results')
 
   const ORDER = [
-    'load-valid', 'load-missing', 'load-corrupt', 'wrong-format',
-    'unload-clears-cache', 'unload-unknown', 'load-same-model-twice', 'load-two-models',
-    'run-float32', 'shape-mismatch-rank', 'shape-mismatch-dim',
-    'dtype-mismatch', 'output-filter', 'inference-unloaded',
+    'S.1-register', 'S.2-list', 'S.3-status', 'S.4-download',
+    'S.5-sizeDisclosure', 'S.6-progress', 'S.7-ready', 'S.8-readyStatus',
+    'O.1-load-valid', 'O.2-load-missing', 'O.3-load-corrupt', 'O.4-wrong-format',
+    'O.5-unload-clears', 'O.6-unload-unknown', 'O.7-load-twice', 'O.8-load-two',
+    'O.9-inference', 'O.10-shape-rank', 'O.11-shape-dim',
+    'O.12-dtype', 'O.13-output-filter', 'O.14-inference-unloaded',
   ]
   let num = 1
 

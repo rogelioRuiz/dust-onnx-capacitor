@@ -8,7 +8,6 @@
     "build:apk": "cd android && ./gradlew assembleDebug",
     "test:ios": "node test-e2e-ios.mjs",
     "test:ios:verbose": "node test-e2e-ios.mjs --verbose",
-    "test:serve-ios": "node test-e2e-serve-ios.mjs",
     "test:yolo-ios": "node test-e2e-yolo-ios.mjs",
     "test:android": "node test-e2e-android.mjs",
     "test:android:verbose": "node test-e2e-android.mjs --verbose",
