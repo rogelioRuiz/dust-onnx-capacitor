@@ -497,8 +497,31 @@
     document.getElementById('tab-test').addEventListener('click', function () { switchMode(false) })
     switchMode(true)
 
-    bootDemo()
-    if (!SERVE_TEST_MODE) {
+    if (SERVE_TEST_MODE) {
+      // Run serve tests directly — don't go through bootDemo()
+      ;(async function () {
+        try {
+          // Wait for Capacitor bridge to be ready
+          for (var attempt = 0; attempt < 100; attempt++) {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.ONNX && window.Capacitor.Plugins.Serve) break
+            await new Promise(function (r) { setTimeout(r, 200) })
+          }
+          state.ONNX = window.Capacitor && window.Capacitor.Plugins ? (window.Capacitor.Plugins.ONNX || null) : null
+          state.Serve = window.Capacitor && window.Capacitor.Plugins ? (window.Capacitor.Plugins.Serve || null) : null
+          await runServeTests()
+        } catch (e) {
+          try {
+            await fetch(RUNNER_URL + '/__serve_done', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ passed: 0, failed: 1, total: 1, fatal: e.message || String(e) }),
+              keepalive: true
+            })
+          } catch (_) {}
+        }
+      })()
+    } else {
+      bootDemo()
       bootTestRunner()
       bootYoloE2E()
     }

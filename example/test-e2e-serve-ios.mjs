@@ -269,6 +269,12 @@ async function main() {
   logSection('0 — Project Setup')
 
   try {
+    console.log('  → npm install...')
+    run('npm install', {
+      cwd: __dirname,
+      timeout: 120_000,
+      stdio: VERBOSE ? [0, 1, 2] : ['ignore', 'pipe', 'pipe'],
+    })
     ensureIosPlatform()
     fixDeploymentTarget()
     pass('0.1 iOS platform ready')
