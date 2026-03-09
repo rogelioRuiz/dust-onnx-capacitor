@@ -45,7 +45,7 @@ class ONNXPlugin : Plugin(), ComponentCallbacks2 {
         dispatcher = handler.asCoroutineDispatcher()
         scope = CoroutineScope(dispatcher + SupervisorJob())
         (bridge.getPlugin("Serve")?.getInstance() as? ServePlugin)
-            ?.setSessionFactory(sessionManager)
+            ?.setSessionFactory(sessionManager, ModelFormat.ONNX.value)
         bridge.context.registerComponentCallbacks(this)
     }
 

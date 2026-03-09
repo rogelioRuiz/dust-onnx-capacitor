@@ -29,7 +29,7 @@ public class ONNXPlugin: CAPPlugin, CAPBridgedPlugin {
         super.load()
         #if canImport(ServePlugin)
         if let servePlugin = bridge?.plugin(withName: "Serve") as? ServePlugin {
-            servePlugin.setSessionFactory(sessionManager)
+            servePlugin.setSessionFactory(sessionManager, for: DustModelFormat.onnx.rawValue)
         }
         #endif
         #if canImport(UIKit)

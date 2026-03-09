@@ -1,6 +1,6 @@
 {
   "name": "dust-onnx-capacitor",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Capacitor plugin for on-device ONNX Runtime model loading over .onnx files.",
   "main": "dist/esm/index.js",
   "types": "dist/esm/index.d.ts",
